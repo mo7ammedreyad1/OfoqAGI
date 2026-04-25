@@ -1,0 +1,12 @@
+{
+  "name": "ofoq-agent",
+  "version": "8.0.0",
+  "type": "module",
+  "private": true,
+  "description": "OFOQ AGI Agent v8 — Plan·Execute·Reflect·Learn",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "agent":     "node src/agent.js",
+    "scheduler": "AGENT_MODE=scheduler node src/agent.js"
+  }
+}
