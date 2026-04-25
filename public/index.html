@@ -1,886 +1,1027 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="ar" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>أفق</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>أفق | OFOQ Agent</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script src="https://unpkg.com/@phosphor-icons/web@2.1.1/src/index.js"></script>
 <style>
-/* ── TOKENS ─────────────────────────────────────────────── */
+/* ════ TOKENS ════ */
 :root{
-  --bg:        #0f0f11;
-  --surface:   #17171a;
-  --border:    rgba(255,255,255,.07);
-  --text:      #e8e8ed;
-  --text-sub:  #6e6e7a;
-  --accent:    #7c6aff;
-  --accent-lo: rgba(124,106,255,.12);
-  --ok:        #22c55e;
-  --error:     #ef4444;
-  --warn:      #f59e0b;
-  --mono:      'JetBrains Mono', monospace;
-  --sans:      'IBM Plex Sans Arabic', system-ui, sans-serif;
-  --r:         10px;
-  --sidebar-w: 260px;
+  --bg:#f8f8f8;--surface:#ffffff;--border:#e8e8e8;--text:#111111;
+  --text-sub:#666666;--text-inv:#ffffff;--accent:#8b5cf6;--accent-dim:#ede9fe;
+  --error:#ef4444;--ok:#10b981;
+  --font-body:'IBM Plex Sans Arabic',sans-serif;
+  --font-mono:'IBM Plex Mono',monospace;
+  --r-sm:10px;--r-md:16px;--r-lg:24px;
+  --sidebar-w:260px;
+  --shadow:0 4px 24px rgba(0,0,0,0.05);
 }
-[data-theme=light]{
-  --bg:        #f5f5f7;
-  --surface:   #ffffff;
-  --border:    rgba(0,0,0,.08);
-  --text:      #1a1a1e;
-  --text-sub:  #8e8e99;
-  --accent-lo: rgba(124,106,255,.08);
+[data-theme="dark"]{
+  --bg:#0f0f0f;--surface:#161616;--border:#272727;
+  --text:#f0f0f0;--text-sub:#888888;--accent-dim:#2e1a5a;
 }
+[data-theme="dark"] .msg-user .bubble{background:#202020!important;color:#ebebeb!important;}
 
-/* ── RESET ──────────────────────────────────────────────── */
+/* ════ RESET ════ */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-html,body{height:100%;overflow:hidden;}
-body{
-  font-family:var(--sans);font-size:14px;
-  background:var(--bg);color:var(--text);
-  line-height:1.6;
+body{font-family:var(--font-body);background:var(--bg);color:var(--text);
+  height:100vh;height:100dvh;overflow:hidden;display:flex;font-size:16px;line-height:1.6;}
+
+/* ════ RTL — نص فقط، لا layout ════ */
+.bubble,.input-area textarea,.think-text,.agent-update,
+.history-item,.sched-item,.new-chat-btn,.setting-label,.chip,
+.sidebar-label,.user-info,.section-label{direction:rtl;unicode-bidi:embed;}
+.app,.sidebar,.chat-pane,.header-row,.input-wrapper,
+.message,.think-bubble,.hero,.chips{direction:ltr;}
+
+/* ════ LOGIN ════ */
+#loginScreen{
+  position:fixed;inset:0;background:var(--bg);z-index:9999;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:18px;padding:24px;
 }
-::-webkit-scrollbar{width:4px;}
-::-webkit-scrollbar-track{background:transparent;}
-::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px;}
+.login-box{width:100%;max-width:360px;display:flex;flex-direction:column;gap:10px;}
+.login-input{width:100%;padding:12px 16px;border:1px solid var(--border);border-radius:var(--r-md);
+  font-size:15px;background:var(--surface);color:var(--text);outline:none;
+  font-family:var(--font-body);transition:border-color .2s;}
+.login-input:focus{border-color:var(--accent);}
+.btn-primary{width:100%;padding:13px;background:var(--text);color:var(--text-inv);border:none;
+  border-radius:var(--r-md);font-size:15px;font-weight:600;cursor:pointer;
+  font-family:var(--font-body);transition:opacity .2s;}
+.btn-primary:hover{opacity:.85;}
+.btn-google{width:100%;padding:13px;background:var(--surface);color:var(--text);
+  border:1px solid var(--border);border-radius:var(--r-md);font-size:15px;font-weight:500;
+  cursor:pointer;font-family:var(--font-body);display:flex;align-items:center;
+  justify-content:center;gap:10px;transition:background .2s;}
+.btn-google:hover{background:var(--bg);}
+.divider{display:flex;align-items:center;gap:12px;color:var(--text-sub);font-size:13px;}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--border);}
 
-/* ── LAYOUT ─────────────────────────────────────────────── */
-#app{display:flex;height:100vh;overflow:hidden;}
+/* ════ APP LAYOUT ════ */
+.app{flex:1;display:flex;height:100%;width:100%;}
 
-/* ── SIDEBAR ────────────────────────────────────────────── */
+/* ════ CHAT PANE (أولاً في DOM → يمين فارغ، sidebar على اليمين) ════ */
+.chat-pane{flex:1;display:flex;flex-direction:column;position:relative;overflow:hidden;}
+
+/* ════ SIDEBAR — على اليسار ════ */
 .sidebar{
-  width:var(--sidebar-w);background:var(--bg);
-  border-left:1px solid var(--border);
+  width:var(--sidebar-w);
+  background:var(--bg);
+  border-right:1px solid var(--border);
   display:flex;flex-direction:column;
-  padding:12px;flex-shrink:0;order:2;
-  transition:transform .25s ease;
+  flex-shrink:0;overflow:hidden;
+  transition:width .3s cubic-bezier(.16,1,.3,1),
+             opacity .3s, padding .3s;
   z-index:50;
+  order:-1;
 }
-.sidebar.hidden{transform:translateX(var(--sidebar-w));width:0;padding:0;overflow:hidden;}
+.sidebar.hidden{width:0;opacity:0;border-right:none;}
 @media(max-width:768px){
-  .sidebar{position:fixed;top:0;right:0;height:100%;transform:translateX(100%);}
+  .sidebar{
+    position:fixed;top:0;left:0;height:100%;
+    transform:translateX(-100%);
+    transition:transform .3s cubic-bezier(.16,1,.3,1),opacity .3s;
+    width:var(--sidebar-w)!important;opacity:1;
+    border-right:1px solid var(--border);
+  }
   .sidebar.open{transform:translateX(0);}
-}
-.sidebar-backdrop{
-  display:none;position:fixed;inset:0;z-index:49;
-  background:rgba(0,0,0,.4);backdrop-filter:blur(2px);
-}
-@media(max-width:768px){.sidebar-backdrop.show{display:block;}}
-
-/* new chat btn */
-.nc-btn{
-  display:flex;align-items:center;gap:7px;width:100%;
-  padding:8px 10px;border-radius:var(--r);border:none;
-  background:transparent;color:var(--text-sub);
-  font-family:var(--sans);font-size:13px;
-  cursor:pointer;transition:background .15s,color .15s;
-  margin-bottom:10px;
-}
-.nc-btn:hover{background:var(--surface);color:var(--text);}
-
-/* section label */
-.sb-label{
-  font-size:10px;color:var(--text-sub);text-transform:uppercase;
-  letter-spacing:.8px;padding:6px 4px 4px;
+  .sidebar.hidden{transform:translateX(-100%);width:var(--sidebar-w)!important;opacity:1;}
 }
 
-/* history + schedule items */
-.sb-item{
-  padding:7px 10px;border-radius:8px;font-size:12.5px;
-  color:var(--text-sub);cursor:pointer;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-  transition:background .12s,color .12s;
+/* ════ SIDEBAR CONTENTS ════ */
+.sidebar-inner{
+  display:flex;flex-direction:column;height:100%;
+  padding:14px 12px 12px;overflow:hidden;
 }
-.sb-item:hover{background:var(--surface);color:var(--text);}
-.sb-item.active{background:var(--accent-lo);color:var(--accent);}
+.new-chat-btn{
+  display:flex;align-items:center;gap:8px;background:transparent;
+  border:1px solid var(--border);padding:9px 13px;border-radius:var(--r-sm);
+  cursor:pointer;font-family:var(--font-body);font-size:13.5px;color:var(--text);
+  transition:background .2s;width:100%;justify-content:center;margin-bottom:14px;
+}
+.new-chat-btn:hover{background:var(--surface);}
 
-/* sched item */
+.sidebar-label{
+  font-size:10.5px;color:var(--text-sub);text-transform:uppercase;
+  letter-spacing:.8px;margin:6px 0 5px;padding:0 2px;
+}
+
+/* قسم قابل للتمرير */
+.sidebar-scroll{flex:1;overflow-y:auto;overflow-x:hidden;margin:0 -2px;}
+.sidebar-scroll::-webkit-scrollbar{width:3px;}
+.sidebar-scroll::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+
+.history-item{
+  padding:7px 9px;font-size:13px;color:var(--text);border-radius:8px;
+  cursor:pointer;display:flex;align-items:center;gap:6px;
+  transition:background .15s;min-height:34px;
+}
+.history-item:hover,.sched-item:hover{background:var(--surface);}
+.history-item.active{background:var(--accent-dim);color:var(--accent);}
+.hi-text{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;}
+.hi-del{
+  opacity:0;cursor:pointer;flex-shrink:0;font-size:12px;
+  padding:2px 5px;border-radius:4px;color:var(--text-sub);
+  transition:opacity .15s;
+}
+.history-item:hover .hi-del,.sched-item:hover .hi-del{opacity:.6;}
+.hi-del:hover{opacity:1!important;color:var(--error);}
+
+/* مهام مجدولة */
 .sched-item{
-  display:flex;align-items:center;gap:7px;
-  padding:6px 10px;border-radius:8px;font-size:12px;
-  color:var(--text-sub);cursor:pointer;
-  transition:background .12s;
+  padding:7px 9px;font-size:12.5px;color:var(--text-sub);border-radius:8px;
+  cursor:pointer;display:flex;align-items:center;gap:6px;
+  transition:background .15s;min-height:32px;
 }
-.sched-item:hover{background:var(--surface);}
-.sched-dot{width:5px;height:5px;border-radius:50%;background:var(--ok);flex-shrink:0;}
-.sched-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.sched-next{font-size:10px;flex-shrink:0;opacity:.5;}
+.sched-dot{
+  width:6px;height:6px;border-radius:50%;background:var(--accent);
+  flex-shrink:0;opacity:.7;
+}
+.sched-dot.inactive{background:var(--text-sub);opacity:.4;}
+.sched-text{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;}
 
-/* scroll area */
-.sb-scroll{flex:1;overflow-y:auto;display:flex;flex-direction:column;}
-
-/* sidebar footer */
-.sb-footer{
-  padding-top:10px;border-top:1px solid var(--border);
+/* ════ SIDEBAR FOOTER ════ */
+.sidebar-footer{
+  padding-top:10px;border-top:1px solid var(--border);margin-top:4px;
   display:flex;flex-direction:column;gap:4px;
 }
-.sb-email{font-size:11px;color:var(--text-sub);overflow:hidden;
-  text-overflow:ellipsis;white-space:nowrap;padding:2px 4px;}
-.sb-btn{
-  display:flex;align-items:center;gap:7px;
-  padding:7px 10px;border-radius:var(--r);border:none;
-  background:transparent;color:var(--text-sub);
-  font-family:var(--sans);font-size:12.5px;cursor:pointer;
-  width:100%;transition:background .12s,color .12s;
+.user-info{
+  font-size:12px;color:var(--text-sub);padding:6px 8px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
-.sb-btn:hover{background:var(--surface);color:var(--text);}
-.sb-btn.danger{color:var(--error);}
-.sb-btn.danger:hover{background:rgba(239,68,68,.08);}
-
-/* ── CHAT PANE ──────────────────────────────────────────── */
-.chat-pane{flex:1;display:flex;flex-direction:column;overflow:hidden;order:1;}
-
-/* header */
-.header{
-  display:flex;align-items:center;justify-content:space-between;
-  padding:10px 14px;border-bottom:1px solid var(--border);flex-shrink:0;
+.footer-btn{
+  display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;
+  background:transparent;border:none;cursor:pointer;font-family:var(--font-body);
+  font-size:13px;color:var(--text-sub);border-radius:8px;
+  transition:background .15s,color .15s;direction:rtl;
 }
-.header-title{font-size:14px;font-weight:600;letter-spacing:-.2px;}
+.footer-btn:hover{background:var(--surface);color:var(--text);}
+.footer-btn.danger:hover{color:var(--error);}
+.footer-btn i{font-size:17px;flex-shrink:0;}
+
+/* ════ HEADER ROW ════ */
+.header-row{
+  position:absolute;top:0;left:0;right:0;z-index:20;
+  display:flex;justify-content:space-between;align-items:center;
+  padding:14px 16px;pointer-events:none;
+}
+.header-group{display:flex;gap:6px;pointer-events:auto;}
 .icon-btn{
-  background:none;border:none;color:var(--text-sub);
-  cursor:pointer;padding:6px;border-radius:7px;
-  display:flex;align-items:center;
-  transition:background .12s,color .12s;
+  background:transparent;border:1px solid transparent;cursor:pointer;
+  padding:7px;border-radius:var(--r-sm);color:var(--text-sub);display:flex;
+  align-items:center;transition:all .2s;
 }
-.icon-btn:hover{background:var(--surface);color:var(--text);}
+.icon-btn:hover{color:var(--text);background:var(--surface);border-color:var(--border);}
 
-/* messages */
-#messages{
-  flex:1;overflow-y:auto;padding:20px 16px;
-  display:flex;flex-direction:column;gap:6px;
+/* ════ CHAT SCROLL ════ */
+.chat-scroll{flex:1;overflow-y:auto;padding:70px 16px 0;
+  display:flex;flex-direction:column;align-items:center;scroll-behavior:smooth;}
+.msg-list{width:100%;max-width:720px;display:flex;flex-direction:column;
+  gap:20px;padding-bottom:200px;}
+
+/* ════ MESSAGES ════ */
+.message{display:flex;gap:12px;animation:fadeUp .35s ease;}
+.message.msg-user{justify-content:flex-end;}
+.msg-user .bubble{
+  background:#f0f0f0;color:#111;
+  border-radius:18px 18px 4px 18px;padding:11px 18px;
+  max-width:82%;word-wrap:break-word;line-height:1.65;
 }
+.msg-ai .avatar{width:28px;height:28px;flex-shrink:0;display:flex;align-items:center;margin-top:2px;}
+.msg-ai .bubble{padding-top:2px;color:var(--text);flex:1;line-height:1.7;overflow-x:hidden;}
 
-/* hero */
+/* ════ THINKING ════ */
+.think-bubble{display:flex;gap:10px;margin-bottom:4px;animation:fadeUp .3s ease;}
+.think-av{width:28px;height:28px;flex-shrink:0;opacity:.25;display:flex;align-items:center;margin-top:2px;}
+.think-content{
+  padding:10px 14px 10px;border-radius:4px 14px 14px 14px;
+  background:transparent;
+  border:1px solid var(--border);
+  border-right:2px solid var(--accent);
+  font-family:var(--font-mono);font-size:11.5px;color:var(--text-sub);
+  line-height:1.7;max-width:calc(100% - 40px);word-break:break-word;direction:rtl;
+  max-height:200px;overflow-y:auto;
+  transition:max-height .4s ease;
+}
+.think-content::-webkit-scrollbar{width:3px;}
+.think-content::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+.think-label{
+  font-size:9.5px;font-weight:600;text-transform:uppercase;
+  letter-spacing:.9px;color:var(--accent);opacity:.7;
+  margin-bottom:7px;display:flex;align-items:center;gap:5px;
+}
+.think-label i{font-size:11px;}
+.think-dots{display:inline-flex;gap:5px;align-items:center;height:14px;}
+.think-dots span{
+  width:4px;height:4px;border-radius:50%;background:var(--accent);
+  opacity:.3;animation:blink 1.4s infinite;
+}
+.think-dots span:nth-child(2){animation-delay:.25s;}
+.think-dots span:nth-child(3){animation-delay:.5s;}
+@keyframes blink{0%,80%,100%{opacity:.2;transform:scale(.75)}40%{opacity:.85;transform:scale(1)}}
+.think-text{display:none;white-space:pre-wrap;font-size:11px;line-height:1.65;}
+.think-content.filled{max-height:160px;}
+.think-content.filled .think-dots{display:none;}
+.think-content.filled .think-text{display:block;}
+
+/* ════ UPDATE PILL ════ */
+.agent-update{
+  display:flex;align-items:center;gap:7px;padding:5px 13px;border-radius:20px;
+  background:var(--surface);border:1px solid var(--border);font-size:12px;
+  color:var(--text-sub);font-family:var(--font-mono);
+  animation:fadeUp .25s ease;width:fit-content;margin:3px 0;
+}
+.upd-dot{width:5px;height:5px;border-radius:50%;background:var(--accent);
+  animation:blink .9s infinite;flex-shrink:0;}
+
+/* ════ HERO ════ */
 .hero{
-  flex:1;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;gap:18px;
-  padding:40px 20px;text-align:center;
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-60%);
+  text-align:center;width:100%;max-width:580px;padding:20px;transition:opacity .3s;
 }
 .hero.gone{display:none;}
-.hero-logo{
-  width:52px;height:52px;border-radius:16px;
-  background:var(--accent-lo);display:flex;align-items:center;justify-content:center;
-  font-size:26px;
-}
-.hero-title{font-size:22px;font-weight:600;letter-spacing:-.5px;}
-.hero-sub{font-size:13px;color:var(--text-sub);max-width:380px;line-height:1.7;}
-.chips{display:flex;flex-wrap:wrap;gap:7px;justify-content:center;max-width:580px;}
+.hero-title{font-size:26px;font-weight:500;margin:14px 0 6px;direction:rtl;}
+.hero-sub{font-size:14px;color:var(--text-sub);margin-bottom:24px;direction:rtl;}
+.chips{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;
+  max-width:540px;margin:0 auto;}
 .chip{
-  padding:7px 14px;border-radius:20px;
-  background:var(--surface);
-  border:1px solid var(--border);
-  font-size:12.5px;color:var(--text-sub);cursor:pointer;
-  transition:background .15s,color .15s,transform .15s;
-  display:flex;align-items:center;gap:6px;
+  background:var(--surface);border:1px solid var(--border);padding:7px 14px;
+  border-radius:20px;font-size:13px;color:var(--text-sub);cursor:pointer;
+  transition:all .2s;display:inline-flex;align-items:center;gap:5px;direction:rtl;
 }
-.chip:hover{background:var(--accent-lo);color:var(--text);transform:translateY(-1px);}
+.chip:hover{background:var(--bg);color:var(--text);transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.06);}
 
-/* ── MESSAGES ───────────────────────────────────────────── */
-.msg-row{display:flex;gap:10px;animation:fadeUp .2s ease;max-width:800px;width:100%;}
-.msg-row.user{flex-direction:row-reverse;align-self:flex-end;}
-.msg-row.ai{align-self:flex-start;}
-
-.avatar{
-  width:28px;height:28px;border-radius:8px;
-  background:var(--surface);border:1px solid var(--border);
-  display:flex;align-items:center;justify-content:center;
-  font-size:13px;flex-shrink:0;margin-top:2px;
+/* ════ INPUT ════ */
+.input-wrapper{
+  position:absolute;bottom:0;left:0;right:0;
+  display:flex;flex-direction:column;align-items:center;z-index:30;
+  padding:8px 16px 16px;
+  background:linear-gradient(to top,var(--bg) 80%,transparent);
 }
-.msg-row.user .avatar{background:var(--accent-lo);}
-
-.bubble{
-  max-width:calc(100% - 40px);padding:10px 14px;
-  border-radius:4px 14px 14px 14px;
-  background:var(--surface);font-size:13.5px;line-height:1.7;
-  word-break:break-word;
+.input-box{
+  width:100%;max-width:720px;background:var(--surface);border-radius:var(--r-lg);
+  padding:13px 16px;display:flex;flex-direction:column;
+  border:1px solid var(--border);box-shadow:var(--shadow);
 }
-.msg-row.user .bubble{
-  border-radius:14px 4px 14px 14px;
-  background:var(--accent-lo);
+.input-box textarea{
+  width:100%;border:none;resize:none;font-family:var(--font-body);
+  font-size:16px;max-height:180px;min-height:22px;
+  color:var(--text);background:transparent;outline:none;
 }
-/* markdown inside bubble */
-.bubble h1,.bubble h2,.bubble h3{margin:10px 0 5px;font-weight:600;}
-.bubble h1{font-size:1.2em;} .bubble h2{font-size:1.1em;} .bubble h3{font-size:1em;}
-.bubble p{margin-bottom:6px;}
-.bubble ul,.bubble ol{padding-right:18px;margin-bottom:6px;}
-.bubble code{
-  font-family:var(--mono);font-size:11.5px;
-  background:rgba(124,106,255,.1);padding:1px 5px;border-radius:4px;
-}
-.bubble pre{
-  background:var(--bg);border:1px solid var(--border);
-  border-radius:8px;padding:12px;overflow-x:auto;margin:8px 0;
-}
-.bubble pre code{background:none;padding:0;font-size:11px;}
-.bubble table{border-collapse:collapse;width:100%;margin:8px 0;font-size:12px;}
-.bubble th,.bubble td{border:1px solid var(--border);padding:5px 9px;}
-.bubble th{background:var(--surface);}
-
-/* ── THINKING BUBBLE ────────────────────────────────────── */
-.think-row{display:flex;gap:10px;max-width:720px;width:100%;animation:fadeUp .2s ease;}
-.think-av{width:28px;flex-shrink:0;display:flex;align-items:flex-start;padding-top:8px;opacity:.3;}
-.think-box{
-  flex:1;border:1px dashed var(--accent-lo);border-radius:4px 14px 14px 14px;
-  font-family:var(--mono);font-size:11px;color:var(--text-sub);overflow:hidden;
-  transition:max-height .3s ease;max-height:34px;background:transparent;
-}
-.think-box.open{
-  max-height:300px;background:rgba(124,106,255,.03);
-}
-.think-head{
-  display:flex;align-items:center;justify-content:space-between;
-  padding:7px 12px;cursor:pointer;user-select:none;
-}
-.think-label{
-  font-size:9px;text-transform:uppercase;letter-spacing:.9px;
-  color:var(--accent);opacity:.6;display:flex;align-items:center;gap:5px;
-}
-.think-toggle{font-size:10px;opacity:.4;transition:opacity .15s;}
-.think-head:hover .think-toggle{opacity:.8;}
-.think-dots{display:inline-flex;gap:3px;align-items:center;}
-.think-dots span{
-  width:3.5px;height:3.5px;border-radius:50%;
-  background:var(--accent);opacity:.35;animation:blink 1.1s infinite;
-}
-.think-dots span:nth-child(2){animation-delay:.18s;}
-.think-dots span:nth-child(3){animation-delay:.36s;}
-.think-body{
-  display:none;padding:2px 12px 10px;white-space:pre-wrap;
-  line-height:1.65;font-size:10.5px;
-  overflow-y:auto;max-height:250px;
-}
-.think-box.open .think-dots{display:none;}
-.think-box.open .think-body{display:block;}
-
-/* ── UPDATE PILL ────────────────────────────────────────── */
-.upd-pill{
-  display:inline-flex;align-items:center;gap:6px;
-  padding:3px 10px;border-radius:14px;margin:2px 0 2px 38px;
-  background:var(--accent-lo);
-  font-family:var(--mono);font-size:11px;color:var(--text-sub);
-  animation:fadeUp .15s ease;width:fit-content;
-}
-.upd-dot{
-  width:4px;height:4px;border-radius:50%;
-  background:var(--accent);animation:blink .8s infinite;
-}
-
-/* ── INPUT BAR ──────────────────────────────────────────── */
-.input-bar{
-  padding:10px 14px 14px;border-top:1px solid var(--border);flex-shrink:0;
-}
-.input-wrap{
-  display:flex;align-items:flex-end;gap:8px;
-  background:var(--surface);border:1px solid var(--border);
-  border-radius:14px;padding:8px 8px 8px 12px;
-  transition:border-color .2s;
-}
-.input-wrap:focus-within{border-color:rgba(124,106,255,.4);}
-#userInput{
-  flex:1;background:none;border:none;outline:none;resize:none;
-  font-family:var(--sans);font-size:13.5px;color:var(--text);
-  line-height:1.6;max-height:180px;min-height:24px;
-}
-#userInput::placeholder{color:var(--text-sub);}
+.input-box textarea::placeholder{color:var(--text-sub);}
+.input-footer{display:flex;justify-content:space-between;align-items:center;margin-top:10px;}
+.attach-btn{color:var(--text-sub);cursor:pointer;padding:7px;border-radius:50%;
+  display:flex;transition:all .2s;}
+.attach-btn:hover{color:var(--text);background:var(--bg);}
 .send-btn{
-  width:34px;height:34px;border-radius:9px;border:none;
-  background:var(--accent);color:#fff;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;
-  flex-shrink:0;transition:opacity .15s,transform .1s;
+  width:34px;height:34px;background:var(--text);border-radius:50%;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+  transition:transform .15s;flex-shrink:0;
 }
-.send-btn:hover{opacity:.88;}
-.send-btn:active{transform:scale(.93);}
-.send-btn:disabled{opacity:.35;cursor:not-allowed;}
-.send-btn svg{width:15px;height:15px;}
+.send-btn:hover{transform:scale(1.06);}
+.conv-badge{display:none;}
+.input-hint{display:none;}
+.hidden{display:none!important;}
 
-/* ── SETTINGS MODAL ─────────────────────────────────────── */
-.overlay{
-  position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;
-  display:none;align-items:center;justify-content:center;
-  backdrop-filter:blur(4px);
+/* ════ STATUS BAR ════ */
+.status-bar{position:fixed;top:0;left:0;right:0;height:2px;background:transparent;z-index:100;}
+.status-bar.active{
+  background:linear-gradient(90deg,transparent,var(--accent),transparent);
+  animation:sweep 1.4s infinite;
 }
-.overlay.show{display:flex;}
-.modal{
-  background:var(--surface);border:1px solid var(--border);
-  border-radius:16px;padding:24px;width:340px;max-width:90vw;
+@keyframes sweep{0%{background-position:-100%}100%{background-position:200%}}
+
+/* ════ SETTINGS MODAL ════ */
+.modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2000;
+  display:none;justify-content:center;align-items:center;backdrop-filter:blur(4px);
 }
-.modal-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;}
-.modal-title{font-size:15px;font-weight:600;}
-.setting-row{
-  display:flex;justify-content:space-between;align-items:center;
-  padding:10px 0;border-bottom:1px solid var(--border);font-size:13px;
+.modal-box{
+  background:var(--surface);padding:28px;border-radius:var(--r-lg);
+  width:90%;max-width:380px;color:var(--text);
 }
-.setting-row:last-child{border:none;}
-/* toggle */
-.toggle{position:relative;width:38px;height:20px;cursor:pointer;}
+.modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;}
+.modal-title{font-size:17px;font-weight:600;}
+.setting-row{display:flex;justify-content:space-between;align-items:center;
+  padding:12px 0;border-bottom:1px solid var(--border);}
+.setting-label{font-size:14px;}
+.toggle{position:relative;display:inline-block;width:38px;height:22px;}
 .toggle input{opacity:0;width:0;height:0;}
-.slider{
-  position:absolute;inset:0;background:var(--border);
-  border-radius:20px;transition:.2s;
-}
-.slider::before{
-  content:'';position:absolute;width:14px;height:14px;
-  border-radius:50%;background:#fff;bottom:3px;right:3px;transition:.2s;
-}
-.toggle input:checked + .slider{background:var(--accent);}
-.toggle input:checked + .slider::before{transform:translateX(-18px);}
+.toggle-slider{position:absolute;cursor:pointer;inset:0;background:#ccc;
+  border-radius:22px;transition:.3s;}
+.toggle-slider::before{content:'';position:absolute;height:16px;width:16px;
+  left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.3s;}
+.toggle input:checked+.toggle-slider{background:var(--accent);}
+.toggle input:checked+.toggle-slider::before{transform:translateX(16px);}
 
-/* status grid */
-.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;}
-.stat-item{
-  background:var(--bg);border-radius:7px;padding:6px 9px;
-  font-size:11.5px;color:var(--text-sub);font-family:var(--mono);
-}
+/* ════ ANIMATIONS ════ */
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 
-/* ── ANIMATIONS ─────────────────────────────────────────── */
-@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
-@keyframes blink{0%,80%,100%{opacity:.2;transform:scale(.7)}40%{opacity:.8;transform:scale(1)}}
+/* ════ MARKDOWN ════ */
+.bubble pre{background:#1a1a2e;border-radius:8px;padding:12px;overflow-x:auto;margin:8px 0;}
+.bubble code{font-family:var(--font-mono);font-size:13px;}
+.bubble p{margin-bottom:8px;}.bubble p:last-child{margin-bottom:0;}
+.bubble ul,.bubble ol{padding-right:20px;margin:6px 0;}
+.bubble table{border-collapse:collapse;width:100%;margin:8px 0;font-size:13px;}
+.bubble th,.bubble td{border:1px solid var(--border);padding:6px 10px;}
+.bubble blockquote{border-right:3px solid var(--accent);padding-right:12px;color:var(--text-sub);margin:8px 0;}
 </style>
 </head>
 <body>
-<!-- Sidebar Backdrop -->
-<div class="sidebar-backdrop" id="sbBdrop" onclick="closeSidebar()"></div>
 
-<!-- App -->
-<div id="app">
+<div class="status-bar" id="statusBar"></div>
 
-  <!-- Chat Pane -->
-  <div class="chat-pane">
-    <div class="header">
-      <div style="display:flex;align-items:center;gap:10px;">
-        <button class="icon-btn" onclick="toggleSidebar()" title="السجل">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-            <line x1="3" y1="6"  x2="21" y2="6"/>
-            <line x1="3" y1="12" x2="21" y2="12"/>
-            <line x1="3" y1="18" x2="21" y2="18"/>
-          </svg>
-        </button>
-        <span class="header-title">أفق</span>
-      </div>
-      <div style="display:flex;gap:6px;">
-        <button class="icon-btn" onclick="toggleTheme()" title="المظهر">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-            <circle cx="12" cy="12" r="4"/>
-            <path d="M12 2v2M12 20v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M2 12h2M20 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
-          </svg>
-        </button>
-        <button class="icon-btn" onclick="showSettings()" title="الإعدادات">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-            <circle cx="12" cy="12" r="3"/>
-            <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
-          </svg>
-        </button>
-      </div>
-    </div>
-
-    <!-- Messages -->
-    <div id="messages">
-      <!-- Hero -->
-      <div class="hero" id="hero">
-        <div class="hero-logo">🌅</div>
-        <h1 class="hero-title">أفق</h1>
-        <p class="hero-sub">مساعد ذكي متكامل — يخطط، ينفذ، يتعلم<br>GitHub Actions · بدون قيود</p>
-        <div class="chips">
-          <div class="chip" onclick="fillInput('حلل آخر 7 أيام لعملات ETH وSOL وأخبرني بأفضل وقت للدخول')">📈 تحليل عملات</div>
-          <div class="chip" onclick="fillInput('اكتب لي سكريبت Python يراقب سعر BTC كل ساعة ويرسل تنبيه لو تجاوز $70,000')">🐍 Python script</div>
-          <div class="chip" onclick="fillInput('ابحث في الإنترنت عن أحدث أخبار الذكاء الاصطناعي اليوم')">🔍 بحث عميق</div>
-          <div class="chip" onclick="fillInput('أريد تقرير أسبوعي عن أداء محفظتي كل جمعة الساعة 9 صباحاً')">⏰ جدولة أسبوعية</div>
-          <div class="chip" onclick="fillInput('اشرح لي معمارية Transformer بأمثلة كود')">🧠 شرح تقني</div>
-          <div class="chip" onclick="fillInput('ما الذي تتذكره عني؟ اعرض ملخص ذاكرتك')">💾 الذاكرة</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Input Bar -->
-    <div class="input-bar">
-      <div class="input-wrap">
-        <textarea id="userInput" rows="1" placeholder="اكتب أي شيء…"
-          onkeydown="handleKey(event)" oninput="resize(this)"></textarea>
-        <button class="send-btn" id="sendBtn" onclick="send()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <line x1="22" y1="2" x2="11" y2="13"/>
-            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
-          </svg>
-        </button>
-      </div>
-    </div>
+<!-- ════ LOGIN ════ -->
+<div id="loginScreen">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="72" height="72">
+    <defs>
+      <filter id="lb" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur in="SourceGraphic" stdDeviation="26"/></filter>
+      <mask id="lm"><rect width="500" height="500" fill="black"/><circle cx="250" cy="250" r="175" fill="none" stroke="white" stroke-width="65"/></mask>
+      <linearGradient id="lt" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#111" stop-opacity="1"/><stop offset="35%" stop-color="#111" stop-opacity=".9"/><stop offset="100%" stop-color="#111" stop-opacity="0"/></linearGradient>
+      <linearGradient id="lb2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#111" stop-opacity="0"/><stop offset="65%" stop-color="#111" stop-opacity=".9"/><stop offset="100%" stop-color="#111" stop-opacity="1"/></linearGradient>
+    </defs>
+    <circle cx="250" cy="250" r="175" fill="none" stroke="#111" stroke-width="65"/>
+    <g mask="url(#lm)">
+      <rect x="230" y="50" width="270" height="400" fill="#8b5cf6"/>
+      <g filter="url(#lb)"><circle cx="375" cy="160" r="70" fill="#10b981"/><circle cx="440" cy="250" r="75" fill="#3b82f6"/><circle cx="375" cy="340" r="70" fill="#f472b6"/><circle cx="310" cy="250" r="75" fill="#ef4444"/></g>
+      <rect x="230" y="45" width="270" height="145" fill="url(#lt)"/>
+      <rect x="230" y="310" width="270" height="145" fill="url(#lb2)"/>
+    </g>
+  </svg>
+  <div style="font-size:22px;font-weight:500;direction:rtl;">Ofoq Agent</div>
+  <div style="font-size:13px;color:var(--text-sub);direction:rtl;">سجّل دخولك للمتابعة</div>
+  <div class="login-box">
+    <input id="loginEmail" type="email" placeholder="الإيميل" class="login-input" dir="ltr">
+    <input id="loginPass" type="password" placeholder="كلمة السر" class="login-input" dir="ltr"
+      onkeydown="if(event.key==='Enter')loginWithEmail()">
+    <button class="btn-primary" onclick="loginWithEmail()">دخول / تسجيل جديد</button>
   </div>
-
-  <!-- Sidebar -->
-  <aside class="sidebar" id="sidebar">
-    <button class="nc-btn" onclick="newChat()">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-      </svg>
-      محادثة جديدة
-    </button>
-
-    <div class="sb-scroll">
-      <!-- History -->
-      <div class="sb-label">المحادثات</div>
-      <div id="histList"></div>
-
-      <!-- Schedules -->
-      <div class="sb-label" style="margin-top:12px">
-        المهام المجدولة
-        <span id="schedBadge" style="background:var(--accent);color:#fff;border-radius:9px;padding:0 6px;font-size:9px;margin-right:4px;display:none"></span>
-      </div>
-      <div id="schedList"></div>
-    </div>
-
-    <div class="sb-footer">
-      <button class="sb-btn" onclick="showSettings()">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="3"/>
-          <path d="M12 1v4M12 19v4"/>
-        </svg>
-        الإعدادات
-      </button>
-      <button class="sb-btn danger" onclick="clearMemory()">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="3 6 5 6 21 6"/>
-          <path d="M19 6l-1 14H6L5 6"/>
-        </svg>
-        مسح الذاكرة
-      </button>
-    </div>
-  </aside>
+  <div class="divider" style="width:100%;max-width:360px;">أو</div>
+  <button class="btn-google" style="width:100%;max-width:360px;" onclick="loginWithGoogle()">
+    <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+    متابعة بـ Google
+  </button>
 </div>
 
-<!-- Settings Modal -->
-<div class="overlay" id="settingsOverlay" onclick="hideSettings()">
-  <div class="modal" onclick="event.stopPropagation()">
-    <div class="modal-hd">
-      <span class="modal-title">الإعدادات</span>
-      <button class="icon-btn" onclick="hideSettings()">✕</button>
+<!-- ════ SETTINGS MODAL ════ -->
+<div class="modal-overlay" id="settingsModal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-title">الإعدادات</div>
+      <button onclick="toggleSettings(false)" class="icon-btn"><i class="ph ph-x"></i></button>
     </div>
     <div class="setting-row">
-      <span>الوضع الليلي</span>
-      <label class="toggle">
-        <input type="checkbox" id="themeToggle" onchange="toggleTheme()">
-        <span class="slider"></span>
-      </label>
+      <span class="setting-label">الوضع الليلي</span>
+      <label class="toggle"><input type="checkbox" id="darkToggle" onchange="toggleDark()"><span class="toggle-slider"></span></label>
     </div>
-    <div class="setting-row" style="flex-direction:column;align-items:flex-start;gap:8px;border:none">
-      <span>حالة النظام</span>
-      <div class="stat-grid" id="statGrid">
-        <div class="stat-item">…</div>
-      </div>
+    <div class="setting-row" style="border:none;flex-direction:column;align-items:flex-start;gap:8px;">
+      <span class="setting-label">معلومات الحساب</span>
+      <div id="userEmailModal" style="font-size:12px;color:var(--text-sub);"></div>
     </div>
   </div>
 </div>
 
+<!-- ════ APP ════ -->
+<div class="app" id="appRoot" style="display:none;">
+
+  <!-- SIDEBAR (أولاً في DOM → يسار في flex) -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-inner">
+      <button class="new-chat-btn" onclick="resetChat()">
+        <i class="ph ph-plus-circle"></i> محادثة جديدة
+      </button>
+
+      <div class="sidebar-scroll" id="sidebarScroll">
+        <!-- محادثات عادية -->
+        <div class="sidebar-label">المحادثات الأخيرة</div>
+        <div id="historyList"></div>
+
+        <!-- مهام مجدولة -->
+        <div class="sidebar-label" id="schedLabel" style="margin-top:12px;display:none;">
+          المهام المجدولة
+        </div>
+        <div id="schedList"></div>
+      </div>
+
+      <!-- Footer: إعدادات + خروج -->
+      <div class="sidebar-footer">
+        <div class="user-info" id="userEmailSidebar"></div>
+        <button class="footer-btn" onclick="toggleSettings(true)">
+          <i class="ph ph-gear"></i> الإعدادات
+        </button>
+        <button class="footer-btn danger" onclick="logout()">
+          <i class="ph ph-sign-out"></i> تسجيل خروج
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- CHAT PANE (ثانياً في DOM — يمين) -->
+  <div class="chat-pane">
+    <div class="header-row">
+      <!-- يسار: زر الـ sidebar فقط -->
+      <div class="header-group">
+        <button class="icon-btn" onclick="toggleSidebar()" title="القائمة الجانبية">
+          <i class="ph ph-sidebar-simple" style="font-size:20px"></i>
+        </button>
+        <button class="icon-btn" onclick="resetChat()" title="محادثة جديدة">
+          <i class="ph ph-note-pencil" style="font-size:20px"></i>
+        </button>
+      </div>
+      <!-- يمين: فارغ أو لوجو صغير -->
+      <div class="header-group" style="opacity:.4;pointer-events:none;">
+        <svg viewBox="0 0 500 500" width="22" height="22" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="250" cy="250" r="175" fill="none" stroke="currentColor" stroke-width="60"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- HERO -->
+    <div class="hero" id="hero">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="72" height="72" style="margin-bottom:12px">
+        <defs>
+          <filter id="hb" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur in="SourceGraphic" stdDeviation="26"/></filter>
+          <mask id="hm"><rect width="500" height="500" fill="black"/><circle cx="250" cy="250" r="175" fill="none" stroke="white" stroke-width="65"/></mask>
+          <linearGradient id="ht" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#111" stop-opacity="1"/><stop offset="35%" stop-color="#111" stop-opacity=".9"/><stop offset="100%" stop-color="#111" stop-opacity="0"/></linearGradient>
+          <linearGradient id="hb2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#111" stop-opacity="0"/><stop offset="65%" stop-color="#111" stop-opacity=".9"/><stop offset="100%" stop-color="#111" stop-opacity="1"/></linearGradient>
+        </defs>
+        <circle cx="250" cy="250" r="175" fill="none" stroke="#111" stroke-width="65"/>
+        <g mask="url(#hm)">
+          <rect x="230" y="50" width="270" height="400" fill="#8b5cf6"/>
+          <g filter="url(#hb)"><circle cx="375" cy="160" r="70" fill="#10b981"/><circle cx="440" cy="250" r="75" fill="#3b82f6"/><circle cx="375" cy="340" r="70" fill="#f472b6"/><circle cx="310" cy="250" r="75" fill="#ef4444"/></g>
+          <rect x="230" y="45" width="270" height="145" fill="url(#ht)"/>
+          <rect x="230" y="310" width="270" height="145" fill="url(#hb2)"/>
+        </g>
+      </svg>
+      <h1 class="hero-title">أفق — OFOQ Agent</h1>
+      <p class="hero-sub">عميل ذكاء اصطناعي متكامل · يفعل أي شيء · يجدول مهامك تلقائياً</p>
+      <div class="chips" id="heroChips">
+        <div class="chip" onclick="fillInput('كل يوم الساعة 7 صباحاً أرسل لي آية قرآنية جديدة مع تفسيرها')"><i class="ph ph-clock-countdown"></i> آية يومية</div>
+        <div class="chip" onclick="fillInput('كل جمعة الساعة 12 ظهراً أرسل لي حديث نبوي شريف')"><i class="ph ph-calendar-check"></i> حديث أسبوعي</div>
+        <div class="chip" onclick="fillInput('اكتب لي سكريبت Python يجلب الطقس لمدينة القاهرة ويعرضه بشكل جميل')"><i class="ph ph-code"></i> سكريبت Python</div>
+        <div class="chip" onclick="fillInput('احسب مواقيت الصلاة اليوم للقاهرة')"><i class="ph ph-moon-stars"></i> مواقيت الصلاة</div>
+        <div class="chip" onclick="fillInput('افحص GitHub token وأعطني قائمة الـ repos المتاحة')"><i class="ph ph-github-logo"></i> فحص GitHub</div>
+        <div class="chip" onclick="fillInput('ما هي المهام المجدولة عندي الآن؟ وما الذاكرة الحالية؟')"><i class="ph ph-brain"></i> حالة النظام</div>
+        <div class="chip" onclick="fillInput('ساعدني في تحليل بيانات — سأرفع ملف CSV')"><i class="ph ph-chart-bar"></i> تحليل بيانات</div>
+        <div class="chip" onclick="fillInput('اشرح لي كل شيء تستطيع فعله')"><i class="ph ph-info"></i> عن أفق</div>
+      </div>
+    </div>
+
+    <!-- MESSAGES -->
+    <div class="chat-scroll" id="chatScroll">
+      <div class="msg-list" id="messages"></div>
+    </div>
+
+    <!-- INPUT -->
+    <div class="input-wrapper">
+      <div id="filePreview" style="display:none;width:100%;max-width:720px;margin-bottom:8px;
+        background:var(--surface);padding:7px 12px;border-radius:8px;
+        align-items:center;gap:8px;border:1px solid var(--border);">
+        <span id="previewName" style="font-size:13px;">ملف</span>
+        <button onclick="clearFile()" style="margin-right:auto;background:none;border:none;cursor:pointer;color:var(--text-sub);">&times;</button>
+      </div>
+      <input type="file" id="fileInput" hidden onchange="handleFileSelect(this)">
+      <div class="input-box">
+        <textarea id="userInput" rows="1" placeholder="اكتب رسالتك... أو اطلب جدولة مهمة 📅"
+          oninput="autoResize(this)" onkeydown="handleEnter(event)"></textarea>
+        <div class="input-footer">
+          <div class="attach-btn" onclick="document.getElementById('fileInput').click()">
+            <i class="ph ph-paperclip" style="font-size:20px"></i>
+          </div>
+          <div class="send-btn" id="sendBtn" onclick="handleSend()">
+            <i id="sendIcon" class="ph ph-arrow-up" style="font-size:17px;color:var(--text-inv)"></i>
+            <i id="stopIcon" class="ph ph-stop-circle hidden" style="font-size:17px;color:var(--text-inv)"></i>
+          </div>
+        </div>
+      </div>
+      <div class="conv-badge" id="convBadge"></div>
+      <div class="input-hint"></div>
+    </div>
+  </div><!-- /chat-pane -->
+
+</div><!-- /app -->
+
+<!-- Firebase SDKs -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
 <script>
-// ── CONFIG ────────────────────────────────────────────────────────
-const CONFIG = {
-  GITHUB_OWNER: 'YOUR_GITHUB_USERNAME',
-  GITHUB_REPO:  'YOUR_REPO_NAME',
-  GITHUB_TOKEN: 'ghp_YOUR_PAT_TOKEN',
+// ════════════════════════════════════════════════
+// CONFIG
+// ════════════════════════════════════════════════
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBMgoRf2EbKpOPe-tcBqrAGjQVvsZ4IKdk",
+  authDomain: "ofoqagent.firebaseapp.com",
+  projectId: "ofoqagent",
+  storageBucket: "ofoqagent.firebasestorage.app",
+  messagingSenderId: "869645909663",
+  appId: "1:869645909663:web:9ea8ae6b23a23440236caa",
 };
+const GITHUB_OWNER      = "mu7ammadreyad";
+const GITHUB_AGENT_REPO = "ofoqagent";
+const GITHUB_TOKEN      = "";  // ← GitHub PAT بصلاحية workflow
 
-// ── STATE ─────────────────────────────────────────────────────────
-let chatHistory  = [];   // [{role,content}]
-let sessions     = [];   // [{id,preview,ts}]
-let schedules    = [];   // [{name,cron,next_run}]
-let currentConv  = null;
-let busy         = false;
+// ════════════════════════════════════════════════
+// FIREBASE INIT
+// ════════════════════════════════════════════════
+firebase.initializeApp(FIREBASE_CONFIG);
+const fbAuth = firebase.auth();
+const db     = firebase.firestore();
 
-// ── INIT ──────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
-  applyTheme(localStorage.getItem('theme') || 'dark');
-  loadHistory();
-  loadSchedules();
+let currentUser    = null;
+let currentIdToken = null;
+let convListener   = null;
+let sibebarConvListener = null;
+let schedListener  = null;
+
+// ── Auth state ──────────────────────────────────
+fbAuth.onAuthStateChanged(async user => {
+  currentUser = user;
+  if (user) {
+    currentIdToken = await user.getIdToken();
+    setInterval(async () => { currentIdToken = await user.getIdToken(true); }, 50*60*1000);
+    showApp();
+  } else {
+    showLoginScreen();
+  }
 });
 
-// ── THEME ─────────────────────────────────────────────────────────
-function toggleTheme() {
-  const cur = document.documentElement.dataset.theme;
-  const nxt = cur === 'light' ? 'dark' : 'light';
-  applyTheme(nxt);
-}
-function applyTheme(t) {
-  document.documentElement.dataset.theme = t === 'light' ? 'light' : '';
-  const cb = document.getElementById('themeToggle');
-  if (cb) cb.checked = (t === 'light');
-  localStorage.setItem('theme', t);
+function showApp() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('appRoot').style.display     = 'flex';
+  const email = currentUser.email || currentUser.displayName || 'مستخدم';
+  document.getElementById('userEmailSidebar').textContent = email;
+  document.getElementById('userEmailModal').textContent   = email;
+  loadTheme();
+  listenConversations();
+  listenScheduledTasks();
+  restoreConvFromUrl();
 }
 
-// ── SIDEBAR ───────────────────────────────────────────────────────
+function showLoginScreen() {
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('appRoot').style.display     = 'none';
+  if (sibebarConvListener) { sibebarConvListener(); sibebarConvListener = null; }
+  if (schedListener)       { schedListener();       schedListener = null; }
+}
+
+// ── Auth ────────────────────────────────────────
+async function loginWithEmail() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const pass  = document.getElementById('loginPass').value;
+  if (!email || !pass) return alert('أدخل الإيميل وكلمة السر');
+  try {
+    await fbAuth.signInWithEmailAndPassword(email, pass);
+  } catch (e) {
+    if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential') {
+      try { await fbAuth.createUserWithEmailAndPassword(email, pass); }
+      catch (e2) { alert('خطأ: ' + e2.message); }
+    } else { alert('خطأ: ' + e.message); }
+  }
+}
+async function loginWithGoogle() {
+  try { await fbAuth.signInWithPopup(new firebase.auth.GoogleAuthProvider()); }
+  catch (e) { alert('فشل: ' + e.message); }
+}
+function logout() {
+  if (convListener)       { convListener();       convListener = null; }
+  if (sibebarConvListener){ sibebarConvListener(); sibebarConvListener = null; }
+  if (schedListener)      { schedListener();       schedListener = null; }
+  fbAuth.signOut();
+  chatHistory = []; currentConvId = null; clearUrlConv();
+}
+
+// ════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════
+let chatHistory   = [];
+let currentConvId = null;
+let isGenerating  = false;
+let conversations = [];
+let scheduledTasks = [];
+
+// ════════════════════════════════════════════════
+// URL ROUTING
+// ════════════════════════════════════════════════
+function setUrlConv(convId) {
+  const url = new URL(window.location.href);
+  url.searchParams.set('conv', convId);
+  window.history.pushState({ convId }, '', url.toString());
+  document.getElementById('convBadge').textContent = convId;
+}
+function clearUrlConv() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete('conv');
+  window.history.replaceState({}, '', url.toString());
+  document.getElementById('convBadge').textContent = '';
+}
+function getUrlConv() { return new URL(window.location.href).searchParams.get('conv'); }
+
+async function restoreConvFromUrl() {
+  const convId = getUrlConv();
+  if (!convId || !currentUser) return;
+  try {
+    const doc = await db.doc(`users/${currentUser.uid}/conversations/${convId}`).get();
+    if (doc.exists) await loadConversation(convId, doc.data());
+    else clearUrlConv();
+  } catch(e) { clearUrlConv(); }
+}
+
+window.addEventListener('popstate', async () => {
+  const convId = getUrlConv();
+  if (convId && currentUser) {
+    const doc = await db.doc(`users/${currentUser.uid}/conversations/${convId}`).get();
+    if (doc.exists) await loadConversation(convId, doc.data());
+  } else { resetChatUI(); }
+});
+
+// ════════════════════════════════════════════════
+// CONVERSATIONS — Firestore listeners
+// ════════════════════════════════════════════════
+function listenConversations() {
+  if (!currentUser) return;
+  sibebarConvListener = db.collection(`users/${currentUser.uid}/conversations`)
+    .orderBy('created_at','desc').limit(40)
+    .onSnapshot(snap => {
+      conversations = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderSidebar();
+    }, err => console.warn('conv listener:', err));
+}
+
+function listenScheduledTasks() {
+  if (!currentUser) return;
+  schedListener = db.collection(`users/${currentUser.uid}/scheduled_tasks`)
+    .orderBy('created_at','desc')
+    .onSnapshot(snap => {
+      scheduledTasks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderSidebar();
+    }, err => console.warn('sched listener:', err));
+}
+
+async function loadConversation(convId, data) {
+  if (convListener) { convListener(); convListener = null; }
+  resetChatUI();
+  currentConvId = convId;
+  setUrlConv(convId);
+  document.getElementById('hero').classList.add('gone');
+
+  // عرض history
+  const history = data.history || [];
+  chatHistory = history.map(m => ({ ...m }));
+  for (const m of history) renderMsg(m.role === 'user' ? 'user' : 'ai', m.content);
+
+  // لو لا تزال تعمل → استمع
+  if (['pending','running','thinking'].includes(data.status)) {
+    isGenerating = true; setBusy(true);
+    const thinkEl = createThinkBubble();
+    let thinkBuf  = '';
+    startConvListener(convId, thinkEl, thinkBuf);
+  }
+
+  renderSidebar();
+  if (window.innerWidth <= 768) document.getElementById('sidebar').classList.remove('open');
+}
+
+function startConvListener(convId, thinkEl, thinkBuf) {
+  convListener = db.doc(`users/${currentUser.uid}/conversations/${convId}`)
+    .onSnapshot(snap => {
+      if (!snap.exists) return;
+      const data = snap.data();
+      const chunks = (data.thinking_chunks || []).join('');
+      if (chunks && chunks !== thinkBuf) {
+        appendThinkChunk(thinkEl, chunks.slice(thinkBuf.length));
+        thinkBuf = chunks;
+      }
+      const updates = data.tool_updates || [];
+      if (updates.length) showUpdatePill(updates[updates.length - 1]);
+
+      if (data.status === 'done' && data.final_response) {
+        convListener(); convListener = null;
+        removeUpdateEl();
+        const tc = thinkEl?.querySelector('.think-content');
+        if (tc && !tc.classList.contains('filled')) thinkEl.remove();
+        renderMsg('ai', data.final_response);
+        chatHistory.push({ role: 'assistant', content: data.final_response });
+        isGenerating = false; setBusy(false);
+      }
+      if (data.status === 'error') {
+        convListener(); convListener = null;
+        removeUpdateEl();
+        if (thinkEl) thinkEl.remove();
+        renderMsg('ai', `❌ ${data.error || 'خطأ غير معروف'}`);
+        isGenerating = false; setBusy(false);
+      }
+    });
+}
+
+// ════════════════════════════════════════════════
+// RENDER SIDEBAR
+// ════════════════════════════════════════════════
+function renderSidebar() {
+  // محادثات عادية (بدون مجدولة)
+  const regular = conversations.filter(c => !c.is_scheduled);
+  document.getElementById('historyList').innerHTML = regular.map(conv => {
+    const preview = (conv.title || conv.user_message || 'محادثة').slice(0, 44);
+    const isActive = conv.id === currentConvId;
+    const icon = conv.status === 'error' ? '⚠️ ' :
+                 ['pending','running','thinking'].includes(conv.status) ? '⏳ ' : '';
+    return `<div class="history-item ${isActive ? 'active' : ''}" onclick="clickHistory('${conv.id}')">
+      <span class="hi-text">${icon}${escHtml(preview)}</span>
+      <span class="hi-del" onclick="deleteConv(event,'${conv.id}')">✕</span>
+    </div>`;
+  }).join('');
+
+  // مهام مجدولة
+  const schedLabel = document.getElementById('schedLabel');
+  const schedList  = document.getElementById('schedList');
+  if (scheduledTasks.length > 0) {
+    schedLabel.style.display = '';
+    schedList.innerHTML = scheduledTasks.map(task => {
+      const isActive = task.active !== false;
+      const nextRun  = task.next_run
+        ? new Date(task.next_run).toLocaleString('ar-EG', { timeZone: 'Africa/Cairo', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })
+        : '';
+      return `<div class="sched-item" title="${escHtml(task.message || '')}">
+        <div class="sched-dot ${isActive ? '' : 'inactive'}"></div>
+        <span class="sched-text">${escHtml(task.title || 'مهمة')}</span>
+        <span style="font-size:10px;color:var(--text-sub);flex-shrink:0;direction:ltr;">${nextRun}</span>
+        <span class="hi-del" onclick="toggleTask(event,'${task.id}',${!isActive})" title="${isActive ? 'إيقاف' : 'تفعيل'}">${isActive ? '⏸' : '▶'}</span>
+        <span class="hi-del" onclick="deleteTask(event,'${task.id}')" title="حذف نهائياً">✕</span>
+      </div>`;
+    }).join('');
+  } else {
+    schedLabel.style.display = 'none';
+    schedList.innerHTML = '';
+  }
+}
+
+async function clickHistory(convId) {
+  if (convId === currentConvId) return;
+  const doc = await db.doc(`users/${currentUser.uid}/conversations/${convId}`).get();
+  if (doc.exists) await loadConversation(convId, doc.data());
+}
+
+async function deleteConv(event, convId) {
+  event.stopPropagation();
+  try {
+    await db.doc(`users/${currentUser.uid}/conversations/${convId}`).delete();
+    if (currentConvId === convId) { resetChatUI(); clearUrlConv(); }
+  } catch(e) { console.warn(e); }
+}
+
+async function toggleTask(event, taskId, newActive) {
+  event.stopPropagation();
+  try {
+    await db.doc(`users/${currentUser.uid}/scheduled_tasks/${taskId}`).update({ active: newActive });
+  } catch(e) { console.warn(e); }
+}
+
+async function deleteTask(event, taskId) {
+  event.stopPropagation();
+  if (!confirm('حذف هذه المهمة المجدولة نهائياً؟')) return;
+  try {
+    await db.doc(`users/${currentUser.uid}/scheduled_tasks/${taskId}`).delete();
+  } catch(e) { console.warn(e); }
+}
+
+// ════════════════════════════════════════════════
+// THEME
+// ════════════════════════════════════════════════
+function loadTheme() {
+  const t = localStorage.getItem('theme') || 'light';
+  document.documentElement.setAttribute('data-theme', t);
+  document.getElementById('darkToggle').checked = t === 'dark';
+}
+function toggleDark() {
+  const d = document.getElementById('darkToggle').checked;
+  document.documentElement.setAttribute('data-theme', d ? 'dark' : 'light');
+  localStorage.setItem('theme', d ? 'dark' : 'light');
+}
+
+// ════════════════════════════════════════════════
+// UI HELPERS
+// ════════════════════════════════════════════════
+function toggleSettings(show) {
+  document.getElementById('settingsModal').style.display = show ? 'flex' : 'none';
+}
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');
-  const bd = document.getElementById('sbBdrop');
-  if (window.innerWidth <= 768) {
-    const opening = !sb.classList.contains('open');
-    sb.classList.toggle('open', opening);
-    bd.classList.toggle('show', opening);
-  } else {
-    sb.classList.toggle('hidden');
-  }
+  if (window.innerWidth <= 768) { sb.classList.toggle('open'); }
+  else { sb.classList.toggle('hidden'); }
 }
-function closeSidebar() {
-  document.getElementById('sidebar').classList.remove('open');
-  document.getElementById('sbBdrop').classList.remove('show');
-}
+function autoResize(ta) { ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,180)+'px'; }
+function handleEnter(e) { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();handleSend();} }
+function fillInput(t) { const el=document.getElementById('userInput'); el.value=t; autoResize(el); el.focus(); }
+function scrollBottom() { const c=document.getElementById('chatScroll'); c.scrollTop=c.scrollHeight; }
 
-// ── HISTORY (LocalStorage) ────────────────────────────────────────
-function loadHistory() {
-  try { sessions = JSON.parse(localStorage.getItem('ofoq_sessions') || '[]'); }
-  catch { sessions = []; }
-  renderHistory();
-}
-function saveHistory() {
-  localStorage.setItem('ofoq_sessions', JSON.stringify(sessions.slice(0, 30)));
-}
-function renderHistory() {
-  const el = document.getElementById('histList');
-  if (!sessions.length) { el.innerHTML = '<div style="padding:6px 10px;font-size:11px;color:var(--text-sub)">لا محادثات</div>'; return; }
-  el.innerHTML = sessions.map(s =>
-    `<div class="sb-item ${s.id === currentConv ? 'active' : ''}" onclick="loadConv('${s.id}')">${esc(s.preview)}</div>`
-  ).join('');
-}
-function loadConv(id) {
-  const s = sessions.find(x => x.id === id);
-  if (!s) return;
-  currentConv  = id;
-  chatHistory  = s.history || [];
-  document.getElementById('messages').innerHTML = '';
-  document.getElementById('hero').classList.add('gone');
-  for (const m of chatHistory) renderMsg(m.role, m.content);
-  closeSidebar();
-  renderHistory();
-}
-
-// ── SCHEDULES (core.md からの読み込みは省略 — LocalStorageに保存) ──
-function loadSchedules() {
-  try { schedules = JSON.parse(localStorage.getItem('ofoq_schedules') || '[]'); }
-  catch { schedules = []; }
-  renderSchedules();
-}
-function renderSchedules() {
-  const el    = document.getElementById('schedList');
-  const badge = document.getElementById('schedBadge');
-  if (!schedules.length) {
-    el.innerHTML = '<div style="padding:6px 10px;font-size:11px;color:var(--text-sub)">لا جداول نشطة</div>';
-    badge.style.display = 'none';
-    return;
-  }
-  badge.textContent   = schedules.length;
-  badge.style.display = 'inline';
-  el.innerHTML = schedules.map(s => `
-    <div class="sched-item">
-      <span class="sched-dot"></span>
-      <span class="sched-name">${esc(s.name)}</span>
-      <span class="sched-next">${relTime(s.next_run)}</span>
-    </div>`
-  ).join('');
-}
-function relTime(iso) {
-  if (!iso) return '—';
-  const d = new Date(iso) - Date.now();
-  if (d < 0) return 'الآن';
-  const m = Math.floor(d / 60000);
-  return m < 60 ? `${m}د` : m < 1440 ? `${Math.floor(m/60)}س` : `${Math.floor(m/1440)}ي`;
-}
-
-// ── NEW CHAT ──────────────────────────────────────────────────────
-function newChat() {
-  currentConv = null;
-  chatHistory = [];
+function resetChatUI() {
+  if (convListener) { convListener(); convListener = null; }
+  chatHistory = []; currentConvId = null; isGenerating = false; setBusy(false);
   document.getElementById('messages').innerHTML = '';
   document.getElementById('hero').classList.remove('gone');
-  renderHistory();
-  closeSidebar();
+  document.getElementById('convBadge').textContent = '';
+  removeUpdateEl();
+}
+function resetChat() {
+  resetChatUI(); clearUrlConv(); renderSidebar();
+  if (window.innerWidth <= 768) document.getElementById('sidebar').classList.remove('open');
 }
 
-// ── SEND ──────────────────────────────────────────────────────────
-async function send() {
-  if (busy) return;
-  const input = document.getElementById('userInput');
-  const msg   = input.value.trim();
-  if (!msg) return;
-  input.value = '';
-  resize(input);
+// ════════════════════════════════════════════════
+// FILE UPLOAD
+// ════════════════════════════════════════════════
+let currentFile = null;
+function handleFileSelect(input) {
+  const f = input.files[0]; if (!f) return;
+  if (f.size > 2*1024*1024) { alert('الحد الأقصى 2MB'); return; }
+  const reader = new FileReader();
+  const isText = f.type.startsWith('text/') || /\.(txt|md|json|csv|js|py|html|css|xml|yml|sh)$/i.test(f.name);
+  reader.onload = async (e) => {
+    const fileId = `file_${Date.now()}`;
+    currentFile = { fileId, name: f.name, mimeType: f.type, size: f.size };
+    document.getElementById('filePreview').style.display = 'flex';
+    document.getElementById('previewName').textContent   = `${f.name} (جارٍ الرفع...)`;
+    if (currentUser) {
+      try {
+        await db.doc(`users/${currentUser.uid}/files/${fileId}`).set({
+          fileId, name: f.name, mimeType: f.type || 'application/octet-stream',
+          size: f.size, textContent: isText ? e.target.result.slice(0,500_000) : null,
+          uploaded_at: firebase.firestore.Timestamp.now(),
+        });
+        document.getElementById('previewName').textContent = `📎 ${f.name} ✅`;
+      } catch { document.getElementById('previewName').textContent = `📎 ${f.name} ⚠️`; }
+    }
+  };
+  isText ? reader.readAsText(f) : reader.readAsDataURL(f);
+}
+function clearFile() {
+  currentFile = null;
+  document.getElementById('fileInput').value = '';
+  document.getElementById('filePreview').style.display = 'none';
+}
+function buildFileMsg(text, file) {
+  if (!file) return text;
+  return `[ملف مرفوع — ID: ${file.fileId} | الاسم: ${file.name} | الحجم: ${(file.size/1024).toFixed(0)}KB]\n\n${text}`;
+}
 
-  if (!currentConv) currentConv = `conv_${Date.now()}`;
+// ════════════════════════════════════════════════
+// SEND MESSAGE
+// ════════════════════════════════════════════════
+function handleSend() {
+  if (isGenerating) { stopGen(); return; }
+  const text = document.getElementById('userInput').value.trim();
+  if (!text && !currentFile) return;
+  sendMessage(text, currentFile);
+}
+function stopGen() {
+  if (convListener) { convListener(); convListener = null; }
+  isGenerating = false; setBusy(false); removeUpdateEl();
+}
+function setBusy(b) {
+  document.getElementById('sendIcon').classList.toggle('hidden', b);
+  document.getElementById('stopIcon').classList.toggle('hidden', !b);
+  document.getElementById('statusBar').className = b ? 'status-bar active' : 'status-bar';
+}
+
+async function sendMessage(text, fileData) {
+  if (!currentUser) { renderMsg('ai','🔐 سجّل دخولك أولاً.'); return; }
   document.getElementById('hero').classList.add('gone');
 
-  // show user msg
-  renderMsg('user', msg);
-  chatHistory.push({ role: 'user', content: msg });
+  const payload     = buildFileMsg(text || '(راجع الملف)', fileData);
+  const displayText = text || `📎 ${fileData?.name || 'ملف'}`;
 
-  // save session preview
-  const prev = sessions.findIndex(s => s.id === currentConv);
-  const sess = { id: currentConv, preview: msg.slice(0, 50), history: chatHistory, ts: Date.now() };
-  if (prev >= 0) sessions[prev] = sess;
-  else sessions.unshift(sess);
-  saveHistory();
-  renderHistory();
+  renderMsg('user', displayText);
+  chatHistory.push({ role:'user', content: displayText });
+  document.getElementById('userInput').value = '';
+  autoResize(document.getElementById('userInput'));
+  clearFile(); isGenerating = true; setBusy(true);
 
-  busy = true;
-  document.getElementById('sendBtn').disabled = true;
+  const convId = `conv_${Date.now()}_${Math.random().toString(36).slice(2,5)}`;
+  currentConvId = convId;
+  setUrlConv(convId);
 
-  // thinking bubble
-  const thinkEl = createThinkBubble();
+  await db.doc(`users/${currentUser.uid}/conversations/${convId}`).set({
+    status:'pending', created_at: firebase.firestore.Timestamp.now(),
+    user_message: payload, history: chatHistory.slice(0,-1),
+    thinking_chunks:[], tool_updates:[], final_response:null, error:null,
+    title: displayText.slice(0,60), is_scheduled: false,
+  });
 
-  try {
-    const response = await dispatchAgent(msg);
-    removeThinkBubble(thinkEl);
-    renderMsg('ai', response);
-    chatHistory.push({ role: 'ai', content: response });
-    sessions[sessions.findIndex(s => s.id === currentConv)].history = chatHistory;
-    saveHistory();
-
-    // check if new schedule was created (detect pattern in response)
-    detectScheduleFromResponse(response);
-
-  } catch (e) {
-    removeThinkBubble(thinkEl);
-    renderMsg('ai', `❌ خطأ: ${e.message}`);
-  }
-
-  busy = false;
-  document.getElementById('sendBtn').disabled = false;
+  const thinkEl  = createThinkBubble();
+  let   thinkBuf = '';
+  startConvListener(convId, thinkEl, thinkBuf);
+  await dispatchAction(currentUser.uid, convId);
 }
 
-// ── GITHUB DISPATCH ───────────────────────────────────────────────
-async function dispatchAgent(message) {
-  const history = chatHistory.slice(0, -1); // بدون الرسالة الحالية
-  const dispatchResp = await fetch(
-    `https://api.github.com/repos/${CONFIG.GITHUB_OWNER}/${CONFIG.GITHUB_REPO}/dispatches`,
+// ════════════════════════════════════════════════
+// DISPATCH
+// ════════════════════════════════════════════════
+async function dispatchAction(uid, convId) {
+  if (!GITHUB_TOKEN || GITHUB_TOKEN.length < 10) {
+    await db.doc(`users/${uid}/conversations/${convId}`).update({
+      status:'error', error:'⚠️ GITHUB_TOKEN غير مُهيأ — افتح index.html وأضف الـ token',
+    });
+    return;
+  }
+  const resp = await fetch(
+    `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_AGENT_REPO}/dispatches`,
     {
-      method: 'POST',
-      headers: {
-        'Authorization': `token ${CONFIG.GITHUB_TOKEN}`,
-        'Accept':        'application/vnd.github+json',
-        'Content-Type':  'application/json',
+      method:'POST',
+      headers:{
+        Authorization:`token ${GITHUB_TOKEN}`,
+        Accept:'application/vnd.github.v3+json',
+        'Content-Type':'application/json',
+        'User-Agent':'OFOQ-Frontend/6.1',
       },
-      body: JSON.stringify({
-        event_type:     'agent-chat',
-        client_payload: {
-          message,
-          history: history.slice(-10).map(m => ({ role: m.role, content: m.content })),
-          conv_id: currentConv,
-        },
-      }),
+      body: JSON.stringify({ event_type:'agent-chat', client_payload:{uid, conv_id:convId} }),
     }
   );
-  if (!dispatchResp.ok) throw new Error(`Dispatch failed: ${dispatchResp.status}`);
-
-  // 2. انتظر انتهاء الـ workflow وجلب النتيجة
-  await sleep(3000);
-  return await pollResult(CONFIG.GITHUB_OWNER, CONFIG.GITHUB_REPO, CONFIG.GITHUB_TOKEN);
-}
-
-async function pollResult(owner, repo, token, maxAttempts = 90) {
-  const startTime = Date.now();
-
-  for (let i = 0; i < maxAttempts; i++) {
-    await sleep(i < 5 ? 3000 : 4000);
-
-    try {
-      // جلب آخر workflow runs
-      const resp = await fetch(
-        `https://api.github.com/repos/${owner}/${repo}/actions/runs?event=repository_dispatch&per_page=3`,
-        { headers: { 'Authorization': `token ${token}`, 'Accept': 'application/vnd.github+json' } }
-      );
-      if (!resp.ok) continue;
-
-      const data = await resp.json();
-      // اختر أحدث run بدأ بعد dispatch
-      const run = (data.workflow_runs || []).find(r =>
-        new Date(r.created_at).getTime() >= startTime - 10000
-      );
-      if (!run) { updateThinkLabel(`جارٍ الإعداد… (${i+1})`); continue; }
-
-      updateThinkLabel(
-        run.status === 'queued'     ? 'في الانتظار…' :
-        run.status === 'in_progress'? `يعمل… (${Math.round((Date.now()-startTime)/1000)}ث)` :
-        'انتهى'
-      );
-
-      if (run.status === 'completed') {
-        if (run.conclusion === 'failure') throw new Error('فشل التنفيذ في GitHub Actions');
-
-        // جلب أحدث session
-        return await fetchLatestSession(owner, repo, token);
-      }
-    } catch (e) {
-      if (e.message.includes('فشل')) throw e;
-    }
-  }
-  throw new Error('انتهت مهلة الانتظار (6 دقائق)');
-}
-
-async function fetchLatestSession(owner, repo, token) {
-  try {
-    // جلب قائمة ملفات sessions
-    const resp = await fetch(
-      `https://api.github.com/repos/${owner}/${repo}/contents/memory/sessions`,
-      { headers: { 'Authorization': `token ${token}`, 'Accept': 'application/vnd.github+json' } }
-    );
-    if (!resp.ok) return '✅ تم التنفيذ بنجاح';
-
-    const files  = await resp.json();
-    const sorted = files
-      .filter(f => f.name.endsWith('.md') && !f.name.startsWith('.'))
-      .sort((a, b) => b.name.localeCompare(a.name));
-
-    if (!sorted.length) return '✅ تم التنفيذ';
-
-    const fResp = await fetch(sorted[0].download_url);
-    const text  = await fResp.text();
-
-    // استخرج أفضل قسم للعرض
-    const keyMatch = text.match(/## نتائج مهمة\n([\s\S]*?)(?=\n## |\n# |$)/);
-    const sumMatch = text.match(/## ملخص\n([\s\S]*?)(?=\n## |\n# |$)/);
-    const content  = (keyMatch?.[1] || sumMatch?.[1] || text)
-      .replace(/^# Session.*\n|^Date:.*\n|^Category:.*\n/gm, '')
-      .trim();
-
-    return content.slice(0, 4000) || '✅ تم التنفيذ';
-  } catch {
-    return '✅ تم التنفيذ';
+  if (!resp.ok) {
+    const body = await resp.json().catch(()=>({}));
+    await db.doc(`users/${uid}/conversations/${convId}`).update({
+      status:'error', error:`فشل dispatch: ${resp.status} — ${body.message||''}`,
+    });
   }
 }
 
-function detectScheduleFromResponse(text) {
-  // لو الرد يذكر جدول جديد → أضفه للـ sidebar
-  const m = text.match(/جدول.*?[""]([^""]+)[""]/);
-  if (m) {
-    schedules.push({ name: m[1], cron: '?', next_run: null });
-    localStorage.setItem('ofoq_schedules', JSON.stringify(schedules));
-    renderSchedules();
-  }
-}
+// ════════════════════════════════════════════════
+// RENDER HELPERS
+// ════════════════════════════════════════════════
+const LOGO_SVG = `<svg viewBox="0 0 500 500" width="26" height="26" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="af" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur in="SourceGraphic" stdDeviation="26"/></filter>
+    <mask id="am"><rect width="500" height="500" fill="black"/><circle cx="250" cy="250" r="175" fill="none" stroke="white" stroke-width="60"/></mask>
+    <linearGradient id="at" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#111" stop-opacity="1"/><stop offset="100%" stop-color="#111" stop-opacity="0"/></linearGradient>
+    <linearGradient id="ab" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#111" stop-opacity="0"/><stop offset="100%" stop-color="#111" stop-opacity="1"/></linearGradient>
+  </defs>
+  <circle cx="250" cy="250" r="175" fill="none" stroke="currentColor" stroke-width="60"/>
+  <g mask="url(#am)">
+    <rect x="230" y="50" width="270" height="400" fill="#8b5cf6"/>
+    <g filter="url(#af)"><circle cx="375" cy="160" r="70" fill="#10b981"/><circle cx="440" cy="250" r="75" fill="#3b82f6"/><circle cx="375" cy="340" r="70" fill="#f472b6"/><circle cx="310" cy="250" r="75" fill="#ef4444"/></g>
+    <rect x="230" y="45" width="270" height="145" fill="url(#at)"/>
+    <rect x="230" y="310" width="270" height="145" fill="url(#ab)"/>
+  </g>
+</svg>`;
 
-// ── RENDER MSG ────────────────────────────────────────────────────
-function renderMsg(role, content) {
-  const el    = document.getElementById('messages');
-  const row   = document.createElement('div');
-  row.className = `msg-row ${role === 'user' ? 'user' : 'ai'}`;
-
-  const av = document.createElement('div');
-  av.className = 'avatar';
-  av.textContent = role === 'user' ? '👤' : '🌅';
-
-  const bubble = document.createElement('div');
-  bubble.className = 'bubble';
-  bubble.innerHTML = marked.parse(content);
-
-  row.appendChild(av);
-  row.appendChild(bubble);
-  el.appendChild(row);
+function renderMsg(role, text) {
+  const c = document.getElementById('messages');
+  const div = document.createElement('div');
+  div.className = `message msg-${role}`;
+  const avatarHtml = role === 'ai' ? `<div class="avatar">${LOGO_SVG}</div>` : '';
+  div.innerHTML = avatarHtml + `<div class="bubble markdown-body">${marked.parse(text||'')}</div>`;
+  c.appendChild(div);
+  hljs.highlightAll();
   scrollBottom();
 }
 
-// ── THINKING BUBBLE ───────────────────────────────────────────────
-let thinkEl = null;
 function createThinkBubble() {
-  const el    = document.getElementById('messages');
-  const row   = document.createElement('div');
-  row.className = 'think-row';
-  row.id        = 'thinkBubble';
-  row.innerHTML = `
-  <div class="think-av">🌅</div>
-  <div class="think-box" id="thinkBox">
-    <div class="think-head" onclick="toggleThink()">
-      <div class="think-label">
-        <div class="think-dots"><span></span><span></span><span></span></div>
-        <span id="thinkLbl">يفكر…</span>
-      </div>
-      <span class="think-toggle" id="thinkToggle">▾</span>
-    </div>
-    <div class="think-body" id="thinkBody"></div>
+  const c = document.getElementById('messages');
+  const d = document.createElement('div');
+  d.className = 'think-bubble';
+  d.innerHTML = `<div class="think-av"><svg viewBox="0 0 500 500" width="22" height="22" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="250" cy="250" r="175" fill="none" stroke="currentColor" stroke-width="60"/>
+  </svg></div>
+  <div class="think-content">
+    <div class="think-label"><i class="ph ph-brain"></i> التفكير</div>
+    <div class="think-dots"><span></span><span></span><span></span></div>
+    <div class="think-text"></div>
   </div>`;
-  el.appendChild(row);
-  scrollBottom();
-  thinkEl = row;
-  return row;
+  c.appendChild(d); scrollBottom(); return d;
 }
-function toggleThink() {
-  const box = document.getElementById('thinkBox');
-  if (!box) return;
-  const open = box.classList.toggle('open');
-  document.getElementById('thinkToggle').textContent = open ? '▴' : '▾';
-}
-function updateThinkLabel(text) {
-  const lbl = document.getElementById('thinkLbl');
-  if (lbl) lbl.textContent = text;
-}
-function appendThinkText(text) {
-  const box  = document.getElementById('thinkBox');
-  const body = document.getElementById('thinkBody');
-  if (!box || !body) return;
-  box.classList.add('open');
-  document.getElementById('thinkToggle').textContent = '▴';
-  body.textContent += text;
+
+function appendThinkChunk(el, chunk) {
+  if (!el) return;
+  const tc = el.querySelector('.think-content'), txt = el.querySelector('.think-text');
+  if (!tc||!txt) return;
+  tc.classList.add('filled');
+  txt.textContent += chunk;
   scrollBottom();
 }
-function removeThinkBubble(el) {
-  if (el && el.parentNode) el.parentNode.removeChild(el);
-  thinkEl = null;
+
+let updateEl = null;
+function showUpdatePill(text) {
+  removeUpdateEl();
+  const c = document.getElementById('messages');
+  const d = document.createElement('div');
+  d.className = 'agent-update'; d.id = 'updPill';
+  d.innerHTML = `<div class="upd-dot"></div>${escHtml(text)}`;
+  c.appendChild(d); scrollBottom(); updateEl = d;
+}
+function removeUpdateEl() { document.getElementById('updPill')?.remove(); updateEl = null; }
+
+function escHtml(t) {
+  return String(t||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
 }
 
-// ── SETTINGS ──────────────────────────────────────────────────────
-function showSettings() {
-  loadStats();
-  document.getElementById('settingsOverlay').classList.add('show');
-}
-function hideSettings() {
-  document.getElementById('settingsOverlay').classList.remove('show');
-}
-async function loadStats() {
-  const g = document.getElementById('statGrid');
-  g.innerHTML = '<div class="stat-item">جارٍ التحميل…</div>';
-  try {
-    const resp = await fetch(
-      `https://api.github.com/repos/${CONFIG.GITHUB_OWNER}/${CONFIG.GITHUB_REPO}/contents/memory/index.md`,
-      { headers: { 'Authorization': `token ${CONFIG.GITHUB_TOKEN}` } }
-    );
-    const data = await resp.json();
-    const text = atob(data.content);
-    const lines = text.split('\n').filter(l => l.trim() && !l.startsWith('#')).length;
-    g.innerHTML = `
-      <div class="stat-item">📝 ${lines} session</div>
-      <div class="stat-item">⏰ ${schedules.length} جدول</div>
-      <div class="stat-item">💬 ${sessions.length} محادثة</div>
-      <div class="stat-item">✅ متصل</div>
-    `;
-  } catch {
-    g.innerHTML = '<div class="stat-item">⚠️ تحقق من الإعدادات</div>';
-  }
-}
-
-// ── MEMORY ────────────────────────────────────────────────────────
-function clearMemory() {
-  if (!confirm('مسح كل المحادثات المحلية؟')) return;
-  sessions = []; chatHistory = []; currentConv = null;
-  saveHistory();
-  newChat();
-}
-
-// ── HELPERS ───────────────────────────────────────────────────────
-function fillInput(text) {
-  const el = document.getElementById('userInput');
-  el.value = text; resize(el); el.focus();
-}
-function resize(el) {
-  el.style.height = 'auto';
-  el.style.height = Math.min(el.scrollHeight, 180) + 'px';
-}
-function handleKey(e) {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
-}
-function scrollBottom() {
-  const el = document.getElementById('messages');
-  requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
-}
-function esc(str) {
-  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+window.addEventListener('load', loadTheme);
 </script>
 </body>
 </html>

@@ -1,196 +1,128 @@
-// agent.js — OFOQ AGI Agent v8.0
-// AGENT_MODE=agent (default) | AGENT_MODE=scheduler
-// لا Firebase — كل شيء في ملفات markdown محلية على GitHub repo
+// agent.js — OFOQ Agent v6.2
+// معمارية: Plan-and-Solve + Reflexion
+// Actions: shell | browser | update_memory | schedule_task | cancel_task
 
-import { execSync }                                     from 'child_process';
-import { readFileSync, writeFileSync, existsSync,
-         unlinkSync, mkdirSync, appendFileSync }        from 'fs';
-import { join, dirname }                                from 'path';
-import { fileURLToPath }                                from 'url';
-import { tmpdir }                                       from 'os';
+import {
+  log, sleep, readSkill,
+  loadMemory, saveMemory,
+  getConv, updateConv, saveConv, appendToConv,
+  executeShell, executeBrowser,
+  createScheduledTask, toggleScheduledTask,
+} from './tools.js';
 
-const __dir       = dirname(fileURLToPath(import.meta.url));
-const ROOT        = join(__dir, '..');
-const MEMORY_DIR  = join(ROOT, 'memory');
-const SESSIONS_DIR= join(MEMORY_DIR, 'sessions');
-const SKILLS_FILE = join(ROOT, 'skills', 'skills.md');
-const CORE_FILE   = join(MEMORY_DIR, 'core.md');
-const INDEX_FILE  = join(MEMORY_DIR, 'index.md');
-const TASK_FILE   = join(ROOT, 'tasks', 'task_LIVE.md');
-const TASKS_DIR   = join(ROOT, 'tasks');
-
-// ── Env ─────────────────────────────────────────────────────────
-const GEMINI_KEY   = process.env.GEMINI_API_KEY;
-const AGENT_MODE   = process.env.AGENT_MODE || 'agent';
-const INPUT_MSG    = process.env.INPUT_MESSAGE;   // للمحادثات العادية
-const SCHED_ID     = process.env.SCHEDULE_ID;     // للـ scheduler
-
-const GEMINI_URL   = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`;
-const MAX_ROUNDS   = 20;
+const GEMINI_KEY = process.env.GEMINI_API_KEY;
+const UID        = process.env.CONV_UID;
+const CONV_ID    = process.env.CONV_ID;
 
 if (!GEMINI_KEY) { console.error('❌ GEMINI_API_KEY missing'); process.exit(1); }
+if (!UID)        { console.error('❌ CONV_UID missing');        process.exit(1); }
+if (!CONV_ID)    { console.error('❌ CONV_ID missing');         process.exit(1); }
 
 // ================================================================
-// SECTION 1 — FILE HELPERS
+// SECTION 1 — ACTION PARSER
+// يدعم: shell | browser | update_memory | schedule_task | cancel_task
 // ================================================================
+function parseActions(text) {
+  const actions = [];
+  const re = /<action\s+([^>]*)>([\s\S]*?)<\/action>/gi;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const attrsStr = m[1], body = m[2].trim();
+    const attrs = {};
+    const ar = /(\w+)=["']([^"']*)["']/g; let am;
+    while ((am = ar.exec(attrsStr)) !== null) attrs[am[1]] = am[2];
+    const type = (attrs.type || '').toLowerCase();
 
-function readFile(path) {
-  try { return existsSync(path) ? readFileSync(path, 'utf8') : ''; }
-  catch { return ''; }
-}
-
-function writeFile(path, content) {
-  try {
-    const dir = dirname(path);
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    writeFileSync(path, content, 'utf8');
-  } catch (e) { log('error', `writeFile(${path}): ${e.message}`); }
-}
-
-function appendFile(path, line) {
-  try {
-    if (!existsSync(dirname(path))) mkdirSync(dirname(path), { recursive: true });
-    appendFileSync(path, '\n' + line, 'utf8');
-  } catch {}
-}
-
-function deleteFile(path) {
-  try { if (existsSync(path)) unlinkSync(path); } catch {}
-}
-
-// ── Task scratchpad ──────────────────────────────────────────────
-function readTask()          { return readFile(TASK_FILE); }
-function writeTask(content)  { writeFile(TASK_FILE, content); log('task', `write (${content.length}ch)`); }
-function clearTask()         { deleteFile(TASK_FILE); }
-
-// ── Memory ───────────────────────────────────────────────────────
-function readCore()          { return readFile(CORE_FILE); }
-function readIndex()         { return readFile(INDEX_FILE); }
-function readSkills()        { return readFile(SKILLS_FILE); }
-
-function updateCore(content) { writeFile(CORE_FILE, content); log('memory', 'core.md updated'); }
-
-function appendIndex(line) {
-  appendFile(INDEX_FILE, line);
-  log('memory', `index.md ← ${line.slice(0, 80)}`);
-}
-
-function saveSession({ title, category, summary, key_results = '', notes = '' }) {
-  const now   = new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' });
-  const date  = new Date().toISOString().slice(0, 10);
-  const slug  = title.replace(/[^a-zA-Z0-9\u0600-\u06FF]/g, '_').slice(0, 40);
-  const fname = `${date}_${slug}.md`;
-  const path  = join(SESSIONS_DIR, fname);
-  const content = [
-    `# Session: ${title}`,
-    `Date: ${now}`,
-    `Category: ${category}`,
-    '',
-    `## ملخص`,
-    summary,
-    '',
-    key_results ? `## نتائج مهمة\n${key_results}` : '',
-    notes       ? `## ملاحظات للمستقبل\n${notes}` : '',
-  ].filter(l => l !== undefined).join('\n');
-  writeFile(path, content);
-  const idxLine = `${date} | ${category} | ${summary.split('\n')[0].slice(0, 100)}`;
-  appendIndex(idxLine);
-  log('memory', `session saved → ${fname}`);
-}
-
-// ================================================================
-// SECTION 2 — LOGGING
-// ================================================================
-
-function log(tag, msg) {
-  const ts = new Date().toISOString().slice(11, 19);
-  console.error(`[${ts}] [${tag.toUpperCase()}] ${msg}`);
-}
-
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-// ================================================================
-// SECTION 3 — SHELL EXECUTION
-// ================================================================
-
-function executeShell(script) {
-  const id      = `ofoq_${Date.now()}`;
-  const tmpFile = join(tmpdir(), `${id}.sh`);
-  writeFileSync(tmpFile, `#!/bin/bash\nset -eo pipefail\n\n${script}\n`, 'utf8');
-
-  let stdout = '', stderr = '';
-  try {
-    stdout = execSync(`bash "${tmpFile}"`, {
-      maxBuffer: 10 * 1024 * 1024,
-      encoding:  'utf8',
-      cwd:       ROOT,
-      env:       { ...process.env, TERM: 'xterm-256color' },
-    });
-    return { success: true, exit_code: 0, stdout: stdout.slice(0, 4000), stderr: '' };
-  } catch (e) {
-    stderr = `${e.stderr || ''}${e.message || ''}`;
-    stdout = e.stdout || '';
-    return {
-      success:   false,
-      exit_code: e.status || 1,
-      stdout:    stdout.slice(0, 2000),
-      stderr:    stderr.slice(0, 1000),
-      error:     stderr.split('\n').filter(Boolean).slice(-3).join(' | '),
-    };
-  } finally {
-    try { if (existsSync(tmpFile)) unlinkSync(tmpFile); } catch {}
-  }
-}
-
-// ================================================================
-// SECTION 4 — GEMINI API
-// ================================================================
-
-async function callGemini(messages, systemInstruction, attempt = 0) {
-  // تنظيف الرسائل — Gemini لا يقبل consecutive same roles
-  const clean = [];
-  for (const m of messages) {
-    const last = clean[clean.length - 1];
-    if (last && last.role === m.role) {
-      last.parts[0].text += '\n' + m.parts[0].text;
-    } else {
-      clean.push({ role: m.role, parts: [{ text: m.parts[0].text }] });
+    if (type === 'shell')         actions.push({ type: 'shell',  script: body });
+    if (type === 'update_memory') actions.push({ type: 'update_memory', content: body });
+    if (type === 'browser') {
+      try   { actions.push({ type: 'browser', config: JSON.parse(body) }); }
+      catch { actions.push({ type: 'browser', config: null, parseError: 'JSON invalid' }); }
+    }
+    if (type === 'schedule_task') {
+      try   { actions.push({ type: 'schedule_task', config: JSON.parse(body) }); }
+      catch (e) { actions.push({ type: 'schedule_task', config: null, parseError: e.message }); }
+    }
+    if (type === 'cancel_task') {
+      actions.push({ type: 'cancel_task', task_id: attrs.task_id || body.trim() });
     }
   }
+  return actions;
+}
+
+function extractText(text) {
+  return text.replace(/<action\s[^>]*>[\s\S]*?<\/action>/gi, '').trim();
+}
+
+// استخرج فقط الرد النهائي للمستخدم — يزيل أي thinking markers
+function extractFinalText(raw) {
+  // الأولوية: tag مخصص <final_response>
+  const m = raw.match(/<final_response>([\s\S]*?)<\/final_response>/i);
+  if (m) return m[1].trim();
+
+  // إزالة <action> blocks
+  let text = extractText(raw);
+
+  // إزالة sections التفكير المسماة [ORIENT] [PLAN] [EXECUTE] [REFLEXION] [CLOSE] [ADAPT]
+  // نحتفظ بأي نص لا يبدأ بـ [MARKER]
+  const THINK_LABELS = 'ORIENT|PLAN|EXECUTE|REFLEXION|CLOSE|ADAPT';
+  const RE = new RegExp(
+    `\\[(?:${THINK_LABELS})\\][^\\[]*(?=\\[(?:${THINK_LABELS})\\]|$)`,
+    'gi'
+  );
+  text = text.replace(RE, '').trim();
+
+  // لو النص لا يزال يبدأ بـ marker مفرد (لم يُزل بالـ lookahead) — أزله
+  const SINGLE = new RegExp(`^\\s*\\[(?:${THINK_LABELS})\\][\\s\\S]*`, 'i');
+  if (SINGLE.test(text)) {
+    // خذ آخر فقرة كبيرة (> 80 حرف) كرد للمستخدم
+    const paras = text.split(/\n{2,}/).filter(p => p.trim().length > 80);
+    text = paras.at(-1)?.trim() || text.trim();
+  }
+
+  return text || raw.trim();
+}
+
+// ================================================================
+// SECTION 2 — MODEL CALL (بدون timeout)
+// ================================================================
+async function callModel(messages, systemInstruction, attempt = 0) {
+  const model = 'gemma-4-26b-a4b-it';
+  const url   = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
+  const clean = messages
+    .map(m => ({ role: m.role, parts: (m.parts || []).filter(p => !p.thought) }))
+    .filter(m => m.parts.length);
 
   let resp;
   try {
-    resp = await fetch(GEMINI_URL, {
-      method:  'POST',
+    resp = await fetch(url, {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: clean,
         systemInstruction: { parts: [{ text: systemInstruction }] },
-        generationConfig:  { temperature: 0.4, maxOutputTokens: 8192 },
+        generationConfig: { temperature: 0.3, maxOutputTokens: 4096, topP: 0.95 },
       }),
     });
   } catch (e) {
-    if (attempt < 5) {
-      const wait = [1000, 3000, 6000, 12000, 24000][attempt];
-      log('warn', `fetch failed → retry ${wait}ms (attempt ${attempt+1})`);
+    if (attempt < 4) {
+      const wait = [1000, 3000, 6000, 12000][attempt];
+      log('warn', 'agent', `fetch failed → retry ${wait}ms`);
       await sleep(wait);
-      return callGemini(messages, systemInstruction, attempt + 1);
+      return callModel(messages, systemInstruction, attempt + 1);
     }
-    throw new Error(`Gemini unreachable: ${e.message}`);
-  }
-
-  if (resp.status === 429 || resp.status === 503) {
-    if (attempt < 5) {
-      const wait = [2000, 5000, 10000, 20000, 40000][attempt];
-      log('warn', `HTTP ${resp.status} → retry ${wait}ms`);
-      await sleep(wait);
-      return callGemini(messages, systemInstruction, attempt + 1);
-    }
+    throw new Error(`AI unreachable: ${e.message}`);
   }
 
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
-    throw new Error(`Gemini HTTP ${resp.status}: ${JSON.stringify(err).slice(0, 200)}`);
+    if ((resp.status === 429 || resp.status === 503) && attempt < 4) {
+      const wait = [2000, 5000, 10000, 20000][attempt];
+      log('warn', 'agent', `HTTP ${resp.status} → retry ${wait}ms`);
+      await sleep(wait);
+      return callModel(messages, systemInstruction, attempt + 1);
+    }
+    throw new Error(`${model} ${resp.status}: ${JSON.stringify(err).slice(0, 150)}`);
   }
 
   const data = await resp.json();
@@ -198,430 +130,287 @@ async function callGemini(messages, systemInstruction, attempt = 0) {
 }
 
 // ================================================================
-// SECTION 5 — ACTION PARSER
+// SECTION 3 — PLAN PASS
+// أول استدعاء للنموذج = وضع خطة كاملة قبل التنفيذ
 // ================================================================
+async function planPass(userMsg, systemMd, currentMemory) {
+  const now = new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' });
+  const planPrompt = `${systemMd}
 
-function parseActions(text) {
-  const re      = /<action\s+type=["']([^"']+)["'][^>]*>([\s\S]*?)<\/action>/gi;
-  const actions = [];
-  let m;
-  while ((m = re.exec(text)) !== null) {
-    const type = m[1].toLowerCase().trim();
-    const body = m[2].trim();
-    actions.push({ type, body, raw: m[0] });
-  }
-  return actions;
+---
+## ذاكرتك الحالية:
+\`\`\`
+${currentMemory}
+\`\`\`
+**الوقت:** ${now}
+
+---
+## مرحلة التخطيط (Plan-and-Solve)
+
+المستخدم طلب:
+"${userMsg}"
+
+ضع خطة واضحة قبل التنفيذ:
+1. GOAL: ما الهدف النهائي بالضبط؟
+2. STEPS: ما الخطوات المطلوبة بالترتيب؟
+3. RISKS: ما الذي قد يفشل؟ كيف ستتعامل معه؟
+4. FIRST_ACTION: ما أول action ستنفذه وهل هو shell, browser, schedule_task, أم update_memory؟
+
+اكتب الخطة باختصار ثم ابدأ بأول action مباشرة.`;
+
+  return callModel(
+    [{ role: 'user', parts: [{ text: planPrompt }] }],
+    systemMd.slice(0, 2000),  // system instruction مختصر للـ plan pass
+  );
 }
 
 // ================================================================
-// SECTION 6 — SYSTEM INSTRUCTION BUILDER
+// SECTION 4 — REFLEXION PROMPT
+// بعد كل نتيجة، النموذج يتأمل ويقرر
 // ================================================================
+function buildReflexionPrompt(actionResults, round, maxRounds) {
+  return `نتائج الـ actions (الجولة ${round}/${maxRounds}):
+${JSON.stringify(actionResults, null, 2)}
 
-function buildSystem(skillsMd, coreMd, indexMd) {
-  const taskNote = readTask();
-  const now      = new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' });
+[REFLEXION]
+- هل النتائج منطقية وصحيحة؟
+- هل الخطة اكتملت أم تبقى خطوات؟
+- هل يجب تعديل الخطة بناءً على ما حدث؟
+
+إذا اكتملت المهمة → اكتب الرد النهائي للمستخدم بدون أي <action>.
+إذا تبقى خطوات → نفّذ الخطوة التالية.
+إذا فشل شيء → حلّل السبب وجرّب البديل.`;
+}
+
+// ================================================================
+// SECTION 5 — SYSTEM INSTRUCTION BUILDER
+// ================================================================
+function buildSystemInstruction(systemMd, currentMemory) {
+  const now = new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' });
   return [
-    skillsMd,
-    '\n\n---\n## ذاكرتك الجوهرية (memory/core.md)\n```\n',
-    coreMd,
-    '\n```\n\n## فهرس الـ Sessions (memory/index.md)\n```\n',
-    indexMd,
+    systemMd,
+    '\n\n---\n## ذاكرتك الحالية (memory.md):\n```\n',
+    currentMemory,
     '\n```',
-    taskNote ? `\n\n## مفكّرتك الحالية (tasks/task_LIVE.md)\n\`\`\`markdown\n${taskNote}\n\`\`\`` : '',
     `\n\n**الوقت الحالي:** ${now}`,
+    '\n\n**تذكر:** Plan-and-Solve + Reflexion — فكّر قبل التنفيذ، تأمّل بعد كل نتيجة.',
   ].join('');
 }
 
 // ================================================================
-// SECTION 7 — REACT LOOP (Plan·Execute·Reflect)
+// SECTION 6 — EXECUTE ONE ACTION
 // ================================================================
+async function executeAction(action, uid, convId) {
+  // ── shell ──────────────────────────────────────────────────────
+  if (action.type === 'shell') {
+    log('info', 'agent', `[shell] ${action.script.slice(0, 60)}...`);
+    await appendToConv(uid, convId, 'tool_updates', '⚙️ جارٍ التنفيذ...');
+    const result = await executeShell(action.script);
+    const label  = result.success
+      ? `✅ ${result.stdout?.slice(0, 100) || 'تم'}`
+      : `❌ ${result.error?.slice(0, 100)}`;
+    await appendToConv(uid, convId, 'tool_updates', label);
+    return { type: 'shell', success: result.success,
+      stdout: result.stdout?.slice(0, 4000), stderr: result.stderr?.slice(0, 800),
+      error: result.error, exit_code: result.exit_code };
+  }
 
-async function reactLoop(userMsg, history, skillsMd) {
-  const messages     = [...history, { role: 'user', parts: [{ text: userMsg }] }];
-  const resultParts  = [];
-  let finalResponse  = null;
-  let coreUpdated    = false;
-  let sessionSaved   = false;
+  // ── browser ────────────────────────────────────────────────────
+  if (action.type === 'browser') {
+    if (action.parseError) return { type: 'browser', success: false, error: action.parseError };
+    log('info', 'agent', `[browser] ${action.config.url}`);
+    await appendToConv(uid, convId, 'tool_updates', `🌐 جارٍ فتح ${action.config.url}...`);
+    const result = await executeBrowser(action.config.url, action.config.task || '');
+    const label  = result.success
+      ? `✅ تم جلب الصفحة (${result.textLength || 0} حرف)`
+      : `❌ ${result.error?.slice(0, 80)}`;
+    await appendToConv(uid, convId, 'tool_updates', label);
+    return result;
+  }
+
+  // ── update_memory ──────────────────────────────────────────────
+  if (action.type === 'update_memory') {
+    log('info', 'agent', `[update_memory] ${action.content.length}ch`);
+    await appendToConv(uid, convId, 'tool_updates', '💾 تحديث الذاكرة...');
+    try {
+      await saveMemory(uid, action.content);
+      await appendToConv(uid, convId, 'tool_updates', '✅ تم حفظ memory.md');
+      return { type: 'update_memory', success: true, size: action.content.length };
+    } catch (e) {
+      await appendToConv(uid, convId, 'tool_updates', `❌ فشل الحفظ: ${e.message.slice(0, 60)}`);
+      return { type: 'update_memory', success: false, error: e.message };
+    }
+  }
+
+  // ── schedule_task ──────────────────────────────────────────────
+  if (action.type === 'schedule_task') {
+    if (action.parseError) return { type: 'schedule_task', success: false, error: action.parseError };
+    log('info', 'agent', `[schedule_task] "${action.config.title}"`);
+    await appendToConv(uid, convId, 'tool_updates', `📅 جدولة: "${action.config.title}"...`);
+    try {
+      const result = await createScheduledTask(uid, action.config);
+      await appendToConv(uid, convId, 'tool_updates', `✅ جُدولت — التالية: ${result.nextRun}`);
+      return { type: 'schedule_task', success: true, ...result, title: action.config.title };
+    } catch (e) {
+      await appendToConv(uid, convId, 'tool_updates', `❌ فشل: ${e.message.slice(0, 60)}`);
+      return { type: 'schedule_task', success: false, error: e.message };
+    }
+  }
+
+  // ── cancel_task ────────────────────────────────────────────────
+  if (action.type === 'cancel_task') {
+    log('info', 'agent', `[cancel_task] ${action.task_id}`);
+    await appendToConv(uid, convId, 'tool_updates', `🛑 إيقاف ${action.task_id}...`);
+    try {
+      await toggleScheduledTask(uid, action.task_id, false);
+      await appendToConv(uid, convId, 'tool_updates', '✅ تم الإيقاف');
+      return { type: 'cancel_task', success: true, task_id: action.task_id };
+    } catch (e) {
+      return { type: 'cancel_task', success: false, error: e.message };
+    }
+  }
+
+  return { type: action.type, success: false, error: 'نوع action غير معروف' };
+}
+
+// ================================================================
+// SECTION 7 — PLAN-AND-SOLVE + REFLEXION LOOP
+// ================================================================
+async function psrLoop(uid, convId, userMsg, history, systemMd) {
+  let currentMemory = await loadMemory(uid);
+  let memUpdated    = false;
+
+  // ── Phase 1: PLAN ─────────────────────────────────────────────
+  log('info', 'agent', 'Phase 1: PLAN');
+  await appendToConv(uid, convId, 'tool_updates', '🧠 جارٍ وضع الخطة...');
+  const planText = await planPass(userMsg, systemMd, currentMemory);
+  const planActions = parseActions(planText);
+  const planOnly    = extractText(planText);
+
+  if (planOnly) await appendToConv(uid, convId, 'thinking_chunks', `[PLAN]\n${planOnly}`);
+  log('info', 'agent', `Plan: ${planOnly.slice(0, 120)}`);
+
+  // ── Phase 2: EXECUTE + REFLEXION LOOP ─────────────────────────
+  const messages = [
+    ...history.filter(m => m.content).map(m => ({
+      role:  m.role === 'user' ? 'user' : 'model',
+      parts: [{ text: m.content }],
+    })),
+    { role: 'user',  parts: [{ text: userMsg }] },
+    { role: 'model', parts: [{ text: planText }] },
+  ];
+
+  let finalText = '';
+  const MAX_ROUNDS = 15;
+
+  // إذا لم يكن في الـ plan actions → الـ plan نفسه هو الرد
+  if (!planActions.length) {
+    finalText = extractFinalText(planText);
+    return buildResult(history, userMsg, finalText, memUpdated);
+  }
+
+  // نفّذ الـ actions من الـ plan
+  let pendingActions = planActions;
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
-    log('loop', `Round ${round + 1}/${MAX_ROUNDS}`);
+    log('info', 'agent', `EXECUTE round ${round + 1}/${MAX_ROUNDS} — ${pendingActions.length} actions`);
 
-    const coreMd  = readCore();
-    const indexMd = readIndex();
-    const sysInst = buildSystem(skillsMd, coreMd, indexMd);
+    // تنفيذ جميع الـ actions
+    const results = [];
+    for (const action of pendingActions) {
+      const result = await executeAction(action, uid, convId);
+      results.push(result);
 
-    const assistantText = await callGemini(messages, sysInst);
-    if (!assistantText) { log('warn', 'Empty response from Gemini'); break; }
-
-    // أضف الرد للـ messages
-    messages.push({ role: 'model', parts: [{ text: assistantText }] });
-
-    const actions = parseActions(assistantText);
-
-    if (!actions.length) {
-      // لا actions → هذا هو الرد النهائي
-      finalResponse = assistantText.replace(/<action[\s\S]*?<\/action>/gi, '').trim();
-      log('loop', `Final response (round ${round + 1})`);
-      break;
-    }
-
-    // نفّذ كل الـ actions
-    for (const action of actions) {
-      log('action', `type=${action.type} body=${action.body.slice(0,60)}`);
-
-      // ── write_task ───────────────────────────────────────────
-      if (action.type === 'write_task') {
-        writeTask(action.body);
-        resultParts.push(`[write_task] ✅ كُتبت (${action.body.length}ch)`);
-      }
-
-      // ── shell ────────────────────────────────────────────────
-      else if (action.type === 'shell') {
-        const res = executeShell(action.body);
-        log('shell', `exit=${res.exit_code} stdout=${res.stdout.slice(0,80)}`);
-        if (res.success) {
-          const out = `[shell] ✅\n\`\`\`\n${res.stdout.slice(0, 2000)}\n\`\`\``;
-          resultParts.push(out);
-          // أضف النتيجة للـ messages كـ user turn حتى يراها الـ model
-          messages.push({ role: 'user', parts: [{ text: `نتيجة shell:\n${res.stdout.slice(0, 2000)}` }] });
-        } else {
-          const errMsg = `[shell] ❌ exit=${res.exit_code}\nstderr: ${res.error}\nstdout: ${res.stdout.slice(0,500)}`;
-          resultParts.push(errMsg);
-          messages.push({ role: 'user', parts: [{ text: errMsg }] });
-        }
-      }
-
-      // ── save_session ─────────────────────────────────────────
-      else if (action.type === 'save_session') {
-        try {
-          const params = JSON.parse(action.body);
-          saveSession(params);
-          clearTask();
-          sessionSaved = true;
-          resultParts.push('[save_session] ✅ session محفوظ، task_LIVE.md محذوف');
-        } catch (e) {
-          resultParts.push(`[save_session] ❌ JSON غير صالح: ${e.message}`);
-        }
-      }
-
-      // ── update_core ──────────────────────────────────────────
-      else if (action.type === 'update_core') {
-        updateCore(action.body);
-        coreUpdated = true;
-        resultParts.push('[update_core] ✅ memory/core.md محدَّث');
-      }
-
-      // ── schedule ─────────────────────────────────────────────
-      else if (action.type === 'schedule') {
-        try {
-          const p = JSON.parse(action.body);
-          handleScheduleCreate(p);
-          resultParts.push(`[schedule] ✅ "${p.name}" مجدولة`);
-        } catch (e) {
-          resultParts.push(`[schedule] ❌ ${e.message}`);
-        }
+      // تحديث الذاكرة المحلية إذا نجح update_memory
+      if (action.type === 'update_memory' && result.success) {
+        currentMemory = action.content;
+        memUpdated    = true;
       }
     }
 
-    // نص خارج الـ actions = رد جزئي — نحتفظ به كـ finalResponse مؤقت
-    const textOutside = assistantText.replace(/<action[\s\S]*?<\/action>/gi, '').trim();
-
-    // لو النص موجود وليس هناك shell actions معلّقة → هذا هو الرد النهائي
-    const hasShell = actions.some(a => a.type === 'shell');
-    if (textOutside && !hasShell && actions.length > 0) {
-      finalResponse = textOutside;
-      break;
-    }
-
-    // أضف ملخص Actions لـ messages ليعرف النموذج ما تم
-    if (resultParts.length > 0) {
-      const summary = resultParts.join('\n\n');
-      messages.push({ role: 'user', parts: [{ text: `نتائج الـ actions:\n${summary}` }] });
-      resultParts.length = 0;
-    }
-  }
-
-  // Fallback — لو انتهت الـ rounds بدون رد نهائي صريح
-  if (!finalResponse) {
-    const lastModel = [...messages].reverse().find(m => m.role === 'model');
-    if (lastModel) {
-      finalResponse = lastModel.parts[0].text
-        .replace(/<action[\s\S]*?<\/action>/gi, '').trim()
-        || 'تم تنفيذ المهمة.';
-    }
-  }
-
-  return { finalResponse, coreUpdated, sessionSaved };
-}
-
-// ================================================================
-// SECTION 8 — SCHEDULE MANAGEMENT
-// ================================================================
-
-function parseCronNext(expr, after = new Date(), tz = 'Africa/Cairo') {
-  const parts = expr.trim().split(/\s+/);
-  if (parts.length !== 5) throw new Error(`cron غير صالح: "${expr}"`);
-  const [minP, hrP, domP, monP, dowP] = parts;
-
-  const matches = (part, val, lo, hi) => {
-    if (part === '*') return true;
-    for (const seg of part.split(',')) {
-      if (seg.includes('/')) {
-        const [rng, step] = seg.split('/');
-        const s = parseInt(step);
-        const [a, b] = rng === '*' ? [lo, hi] : rng.split('-').map(Number);
-        for (let v = a; v <= b; v += s) if (v === val) return true;
-      } else if (seg.includes('-')) {
-        const [a, b] = seg.split('-').map(Number);
-        if (val >= a && val <= b) return true;
-      } else if (parseInt(seg) === val) return true;
-    }
-    return false;
-  };
-
-  const d = new Date(after.getTime() + 60_000);
-  d.setSeconds(0, 0);
-  for (let i = 0; i < 527_040; i++) {
-    const fmt   = new Intl.DateTimeFormat('en-US', {
-      timeZone: tz, year:'numeric', month:'2-digit', day:'2-digit',
-      hour:'2-digit', minute:'2-digit', hour12: false,
-    }).formatToParts(d);
-    const g     = t => parseInt(fmt.find(p=>p.type===t)?.value ?? '0');
-    const [mn, hr, dom, mon] = [g('minute'), g('hour'), g('day'), g('month')];
-    const dow   = new Date(d.toLocaleString('en-US',{timeZone:tz})).getDay();
-    if (matches(minP,mn,0,59) && matches(hrP,hr,0,23) &&
-        matches(domP,dom,1,31) && matches(monP,mon,1,12) &&
-        matches(dowP,dow,0,6)) return new Date(d);
-    d.setTime(d.getTime() + 60_000);
-  }
-  return null;
-}
-
-function handleScheduleCreate(params) {
-  const { name, cron, task_prompt, timezone = 'Africa/Cairo' } = params;
-  const nextRun = parseCronNext(cron, new Date(), timezone);
-  // أضف للـ core.md تحت ## جداول نشطة
-  let core = readCore();
-  const schedBlock = [
-    `\nSCHEDULE_${Date.now()}:`,
-    `  name: ${name}`,
-    `  cron: "${cron}"`,
-    `  task_prompt: "${task_prompt}"`,
-    `  last_run: null`,
-    `  next_run: ${nextRun?.toISOString() ?? 'null'}`,
-    `  timezone: ${timezone}`,
-    `  status: active`,
-  ].join('\n');
-  if (!core.includes('## جداول نشطة')) core += '\n\n## جداول نشطة\n';
-  core += schedBlock;
-  updateCore(core);
-  log('schedule', `Created "${name}" → next: ${nextRun?.toISOString()}`);
-}
-
-// ================================================================
-// SECTION 9 — SCHEDULER MODE
-// ================================================================
-
-async function getDueSchedules() {
-  const core = readCore();
-  const now  = new Date();
-  const re   = /SCHEDULE_(\d+):\n([\s\S]*?)(?=\nSCHEDULE_|\n## |\n# |$)/g;
-  const due  = [];
-  let m;
-  while ((m = re.exec(core)) !== null) {
-    const block = m[2];
-    const get = (k) => { const r = new RegExp(`${k}: (.+)`); return block.match(r)?.[1]?.trim() ?? ''; };
-    if (get('status') !== 'active') continue;
-    const nextRun = get('next_run');
-    if (!nextRun || nextRun === 'null') continue;
-    if (new Date(nextRun) <= now) {
-      due.push({
-        id:          `SCHEDULE_${m[1]}`,
-        name:        get('name'),
-        cron:        get('cron').replace(/^"|"$/g,''),
-        task_prompt: get('task_prompt').replace(/^"|"$/g,''),
-        timezone:    get('timezone') || 'Africa/Cairo',
-      });
-    }
-  }
-  return due;
-}
-
-async function runScheduledTask(sched, skillsMd) {
-  log('scheduler', `Running: "${sched.name}"`);
-  const coreMd  = readCore();
-  const indexMd = readIndex();
-  const taskMsg = `[مهمة مجدولة تلقائية]\nالاسم: ${sched.name}\n\n${sched.task_prompt}`;
-  const { finalResponse } = await reactLoop(taskMsg, [], skillsMd);
-
-  // احفظ النتيجة كـ session
-  saveSession({
-    title:       `مجدولة: ${sched.name}`,
-    category:    'schedule',
-    summary:     (finalResponse || 'لم يتم توليد رد').slice(0, 300),
-    key_results: finalResponse?.slice(0, 500) || '',
-    notes:       `تشغيل تلقائي — cron: ${sched.cron}`,
-  });
-
-  // حدّث next_run
-  const nextRun = parseCronNext(sched.cron, new Date(), sched.timezone);
-  let core = readCore();
-  core = core.replace(
-    new RegExp(`(${sched.id}:[\\s\\S]*?next_run: )[^\\n]+`),
-    `$1${nextRun?.toISOString() ?? 'null'}`
-  ).replace(
-    new RegExp(`(${sched.id}:[\\s\\S]*?last_run: )[^\\n]+`),
-    `$1${new Date().toISOString()}`
-  );
-  updateCore(core);
-  log('scheduler', `Done: "${sched.name}" → next: ${nextRun?.toISOString()}`);
-}
-
-// ================================================================
-// SECTION 10 — OUTPUT (stdout للـ frontend)
-// ================================================================
-
-function output(obj) {
-  process.stdout.write(JSON.stringify(obj) + '\n');
-}
-
-// ================================================================
-// SECTION 11 — MAIN AGENT
-// ================================================================
-
-async function mainAgent() {
-  if (!INPUT_MSG) {
-    log('error', 'INPUT_MESSAGE env var is required');
-    process.exit(1);
-  }
-
-  log('agent', `Starting — msg: "${INPUT_MSG.slice(0, 80)}"`);
-
-  const skillsMd = readSkills();
-  if (!skillsMd) { log('error', 'skills/skills.md not found'); process.exit(1); }
-
-  // قراءة تاريخ المحادثة — HISTORY قد يكون string أو array
-  let historyRaw = [];
-  if (process.env.HISTORY) {
-    try {
-      const parsed = JSON.parse(process.env.HISTORY);
-      historyRaw = Array.isArray(parsed) ? parsed : [];
-    } catch { historyRaw = []; }
-  }
-  const history = historyRaw.map(m => ({
-    role:  m.role === 'user' ? 'user' : 'model',
-    parts: [{ text: String(m.content || '') }],
-  }));
-
-  output({ type: 'status', status: 'thinking' });
-
-  // ── Quick Thinking Pass ─────────────────────────────────────────
-  // تفكير أولي سريع قبل الـ loop — يساعد النموذج يفهم المهمة ويخطط
-  const coreMd  = readCore();
-  const indexMd = readIndex();
-  const thinkPrompt = `أنت أفق. المستخدم طلب:
-"${INPUT_MSG}"
-
-ذاكرتك الجوهرية:
-${coreMd.slice(0, 800)}
-
-فهرس الـ sessions:
-${indexMd.slice(0, 400)}
-
-في جملة واحدة: ما الطريقة المثلى لتنفيذ هذا الطلب؟ وهل تحتاج shell؟ وهل له علاقة بـ sessions سابقة؟`;
-
-  const thinkResp = await callGemini(
-    [{ role: 'user', parts: [{ text: thinkPrompt }] }],
-    'أنت مساعد تحليلي. فكّر بصوت عالٍ بإيجاز ثم أجب في 3 أسطر كحد أقصى.',
-  ).catch(() => '');
-
-  if (thinkResp) {
-    output({ type: 'thinking', text: thinkResp });
-    log('think', thinkResp.slice(0, 120));
-  }
-
-  // ── Main ReAct Loop ─────────────────────────────────────────────
-  const { finalResponse, coreUpdated, sessionSaved } = await reactLoop(
-    INPUT_MSG, history, skillsMd
-  );
-
-  if (!finalResponse) {
-    output({ type: 'error', message: 'لم يصل الـ agent لرد نهائي' });
-    process.exit(1);
-  }
-
-  // ── Auto-save session إذا لم يفعلها الـ AI بنفسه ─────────────────
-  if (!sessionSaved) {
-    const date     = new Date().toISOString().slice(0, 10);
-    const category = guessCategory(INPUT_MSG);
-    saveSession({
-      title:       INPUT_MSG.slice(0, 50),
-      category,
-      summary:     finalResponse.slice(0, 250),
-      key_results: '',
-      notes:       '',
+    // ── REFLEXION ──────────────────────────────────────────────
+    log('info', 'agent', `Phase REFLEXION — round ${round + 1}`);
+    const reflexionMsg = buildReflexionPrompt(results, round + 1, MAX_ROUNDS);
+    messages.push({
+      role:  'user',
+      parts: [{ text: reflexionMsg }],
     });
-    log('agent', 'Auto-saved session');
-  }
 
-  output({ type: 'response', text: finalResponse });
-  output({ type: 'meta', core_updated: coreUpdated, session_saved: true });
-  log('agent', `Done — core_updated=${coreUpdated}`);
-}
+    const sysInst  = buildSystemInstruction(systemMd, currentMemory);
+    const nextStep = await callModel(messages, sysInst);
+    log('info', 'agent', `Reflexion response (${nextStep.length}ch): ${nextStep.slice(0, 80)}`);
 
-/** تخمين فئة المهمة من نص الرسالة */
-function guessCategory(msg) {
-  const m = msg.toLowerCase();
-  if (/python|كود|script|برمج|debug/.test(m))    return 'code';
-  if (/ابحث|اقرأ|اجلب|اعرف|ما هو|خبر/.test(m)) return 'research';
-  if (/حلل|تقرير|قارن|أداء/.test(m))             return 'analysis';
-  if (/جدول|كل يوم|كل أسبوع|ذكّر/.test(m))       return 'schedule';
-  if (/token|config|إعداد|ربط/.test(m))           return 'config';
-  return 'other';
-}
+    const nextActions = parseActions(nextStep);
+    const nextText    = extractText(nextStep);
 
-// ================================================================
-// SECTION 12 — MAIN SCHEDULER
-// ================================================================
+    if (nextText) await appendToConv(uid, convId, 'thinking_chunks', `[REFLEXION r${round+1}]\n${nextText}`);
 
-async function mainScheduler() {
-  log('scheduler', `Starting — ${new Date().toISOString()}`);
+    messages.push({ role: 'model', parts: [{ text: nextStep }] });
 
-  const skillsMd = readSkills();
-  if (!skillsMd) { log('error', 'skills/skills.md not found'); process.exit(1); }
-
-  const due = await getDueSchedules();
-  log('scheduler', `Due schedules: ${due.length}`);
-
-  if (!due.length) { log('scheduler', 'No due schedules — done.'); return; }
-
-  for (const sched of due) {
-    try {
-      await runScheduledTask(sched, skillsMd);
-      await sleep(3000);
-    } catch (e) {
-      log('error', `Scheduler failed for "${sched.name}": ${e.message}`);
+    // لا actions → رد نهائي
+    if (!nextActions.length) {
+      finalText = extractFinalText(nextStep);
+      break;
     }
+
+    pendingActions = nextActions;
   }
 
-  log('scheduler', 'All done.');
+  if (!finalText) finalText = '⚠️ وصلت للحد الأقصى من الجولات — راجع tool_updates لتفاصيل ما تم.';
+  return buildResult(history, userMsg, finalText, memUpdated);
+}
+
+function buildResult(history, userMsg, finalText, memUpdated) {
+  return {
+    finalText,
+    updatedHistory: [
+      ...history,
+      { role: 'user',      content: userMsg },
+      { role: 'assistant', content: finalText },
+    ],
+    memUpdated,
+  };
 }
 
 // ================================================================
-// ENTRYPOINT
+// MAIN
 // ================================================================
+async function main() {
+  log('info', 'agent', `Starting — uid=${UID?.slice(0,8)} conv=${CONV_ID}`);
 
-log('agent', `Mode: ${AGENT_MODE}`);
+  const systemMd = readSkill('system.md');
+  if (!systemMd) { log('error', 'agent', 'skills/system.md not found'); process.exit(1); }
 
-if (AGENT_MODE === 'scheduler') {
-  mainScheduler().catch(e => {
-    log('error', `Scheduler fatal: ${e.message}`);
-    process.exit(1);
+  await updateConv(UID, CONV_ID, { status: 'thinking' });
+
+  const conv = await getConv(UID, CONV_ID);
+  if (!conv) { log('error', 'agent', 'Conversation not found'); process.exit(1); }
+
+  const userMsg = conv.user_message;
+  const history = conv.history || [];
+
+  await updateConv(UID, CONV_ID, { status: 'running' });
+
+  const { finalText, updatedHistory, memUpdated } = await psrLoop(
+    UID, CONV_ID, userMsg, history, systemMd,
+  );
+
+  await saveConv(UID, CONV_ID, {
+    status:         'done',
+    final_response: finalText,
+    history:        updatedHistory,
+    finished_at:    new Date().toISOString(),
   });
-} else {
-  mainAgent().catch(e => {
-    log('error', `Agent fatal: ${e.message}`);
-    output({ type: 'error', message: e.message });
-    process.exit(1);
-  });
+
+  log('ok', 'agent', `Done — memUpdated=${memUpdated} history=${updatedHistory.length}`);
 }
+
+main().catch(async (e) => {
+  log('error', 'agent', 'Fatal', { error: e.message });
+  try {
+    await saveConv(UID, CONV_ID, {
+      status: 'error', error: e.message, finished_at: new Date().toISOString(),
+    });
+  } catch {}
+  process.exit(1);
+});

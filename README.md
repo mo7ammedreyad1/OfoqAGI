@@ -1,108 +1,136 @@
-# OFOQ AGI Agent v8.0
+# أفق — OFOQ Agent v6.1
 
-مساعد ذكاء اصطناعي عام متكامل — بدون قيود، بدون Firebase، كل شيء في ملفات.
-
----
-
-## المعمارية
-
-```
-ofoq-agent/
-├── src/agent.js              ← الدماغ الوحيد (Agent + Scheduler)
-├── memory/
-│   ├── core.md               ← الذاكرة الجوهرية الدائمة
-│   ├── index.md              ← فهرس كل الـ sessions (سطر لكل session)
-│   └── sessions/             ← ملف لكل session (موجز + نتائج)
-├── skills/skills.md          ← system prompt كامل
-├── tasks/task_LIVE.md        ← scratchpad مؤقت (يُحذف بعد كل session)
-├── public/index.html         ← واجهة المستخدم
-└── .github/workflows/
-    ├── agent.yml             ← محادثات عادية
-    └── scheduler.yml         ← مهام مجدولة (كل دقيقة)
-```
+عميل ذكاء اصطناعي متكامل مبني على GitHub Actions + Firebase. يستطيع تنفيذ **أي مهمة برمجية أو تشغيلية** وجدولة المهام المتكررة تلقائياً.
 
 ---
 
-## معمارية التفكير — 6 طبقات
+## المميزات
+
+- **محادثة طبيعية** — اكتب بالعربية وأفق يفهم ويُنفِّذ
+- **جدولة مهام تلقائية** — "كل يوم الساعة 9 أرسل لي آية قرآنية" يعمل فعلاً
+- **تنفيذ كود حقيقي** — shell, Python, curl, git, ffmpeg, أي شيء على Ubuntu
+- **ذاكرة دائمة** — يتذكر المعلومات بين المحادثات عبر Firestore
+- **محادثات مرتبطة بـ URL** — كل محادثة لها رابط فريد في المتصفح
+- **المهام المجدولة** في قسم منفصل بالـ sidebar
+
+---
+
+## الهيكل
 
 ```
-PERCEIVE → PLAN → EXECUTE → REFLEXION → SYNTHESIZE → LEARN
+ofoqagent/
+├── public/
+│   └── index.html          # واجهة المستخدم (RTL، sidebar يمين)
+├── skills/
+│   ├── soul.md             # شخصية الـ agent ومنهج تفكيره
+│   ├── tools.md            # مرجع الأدوات الشامل (shell, python, APIs)
+│   └── memory.md           # قالب الذاكرة الأولية
+├── src/
+│   ├── agent.js            # ReAct loop — ينفذ المحادثات
+│   ├── scheduler.js        # يفحص المهام المجدولة ويطلقها
+│   └── tools.js            # أدوات: shell, memory, conversations, scheduled tasks
+├── .github/workflows/
+│   ├── agent.yml           # يشتغل عند كل رسالة (repository_dispatch)
+│   └── scheduler.yml       # يشتغل كل ساعة (cron)
+└── package.json
 ```
-
-1. **PERCEIVE** — يقرأ `memory/core.md` + `memory/index.md`
-2. **PLAN** — يكتب خطة كاملة في `tasks/task_LIVE.md` قبل أي shell
-3. **EXECUTE** — خطوة واحدة في كل shell action
-4. **REFLEXION** — بعد كل نتيجة: هل منطقية؟ لماذا نجح/فشل؟
-5. **SYNTHESIZE** — رد نهائي مبني على task_LIVE.md + الذاكرة
-6. **LEARN** — يحفظ session، يحدّث index.md، يحذف task_LIVE.md
 
 ---
 
 ## الإعداد
 
-### 1. GitHub Secrets
-```
-GEMINI_API_KEY → مفتاح Gemini API
-```
+### 1. Firebase
 
-### 2. إعداد Frontend
-في `public/index.html` عدّل:
-```js
-const CONFIG = {
-  GITHUB_OWNER: 'your-username',
-  GITHUB_REPO:  'ofoq-agent',
-  GITHUB_TOKEN: 'ghp_...',   // PAT بصلاحية workflow + contents
-};
-```
+1. أنشئ مشروع Firebase من [console.firebase.google.com](https://console.firebase.google.com)
+2. فعّل **Authentication** (Email/Password + Google)
+3. فعّل **Firestore** في وضع production
+4. من Project Settings → Service Accounts → Generate new private key → احفظ الـ JSON
 
-### 3. الـ Actions المتاحة للـ AI
+### 2. GitHub Secrets
 
-| Action | الوظيفة |
-|---|---|
-| `write_task` | كتابة خطة + نتائج مؤقتة (قبل أي shell) |
-| `shell` | تنفيذ bash على Ubuntu VM (بدون timeout) |
-| `save_session` | حفظ ملخص في memory/sessions/ |
-| `update_core` | تحديث الذاكرة الجوهرية |
-| `schedule` | إنشاء مهمة مجدولة متكررة |
+أضف في Settings → Secrets and variables → Actions:
 
----
+| الاسم | القيمة |
+|-------|--------|
+| `GEMINI_API_KEY` | مفتاح Gemini API |
+| `FIREBASE_SERVICE_ACCOUNT` | محتوى ملف JSON كاملاً |
 
-## مثال — كيف يعمل
+### 3. Firestore Index (للمهام المجدولة)
 
-**المستخدم:** "حلل أداء BTC أسبوعياً"
+أضف Collection Group Index لـ `scheduled_tasks`:
+- Collection ID: `scheduled_tasks`
+- Fields: `active` (Ascending) + `next_run` (Ascending)
 
-```
-Round 1:
-  [write_task] خطة: 1.جلب سعر حالي 2.جلب قبل 7أيام 3.حساب التغيير
+أو شغّل المجدول مرة وستظهر رسالة خطأ بها رابط إنشاء الـ index تلقائياً.
 
-Round 2:
-  [shell] جلب الأسعار من CoinGecko
-  نتيجة: BTC=$63,000
+### 4. index.html
 
-Round 3:
-  [shell] جلب السعر قبل 7 أيام
-  نتيجة: BTC=$61,200
-
-Round 4 (REFLEXION):
-  [write_task] حدّث: BTC +2.9% — أداء إيجابي هذا الأسبوع
-
-Round 5:
-  رد نهائي: تقرير مفصل
-
-Round 6:
-  [save_session] حفظ الملخص
-  [update_core] لو تعلّم شيئاً جديداً
+عدّل القيم في أعلى `<script>` في `public/index.html`:
+```javascript
+const GITHUB_OWNER      = "username";    // اسم مستخدم GitHub
+const GITHUB_AGENT_REPO = "ofoqagent";  // اسم الـ repo
+const GITHUB_TOKEN      = "ghp_...";    // PAT بصلاحية workflow
 ```
 
 ---
 
-## الفرق عن الإصدارات السابقة
+## Actions المتاحة للـ Agent
 
-| السابق | v8 |
-|---|---|
-| Firebase Firestore | ملفات markdown فقط |
-| soul.md + tools.md منفصلين | skills.md موحّد |
-| ReAct loop بسيط | Plan·Execute·Reflect·Learn |
-| لا تعلّم بين sessions | كل session يُعلّم الـ agent |
-| timeout على shell | بدون أي timeout |
-| محدود بنشر المحتوى | أي مهمة بدون قيود |
+### shell
+```xml
+<action type="shell">
+curl -sf https://api.github.com/user
+</action>
+```
+
+### update_memory
+```xml
+<action type="update_memory">
+## CONFIG
+github_token: ghp_xxx
+...
+</action>
+```
+
+### schedule_task
+```xml
+<action type="schedule_task">
+{
+  "title": "حكمة يومية",
+  "message": "أعطني حكمة إسلامية جديدة",
+  "schedule_type": "daily",
+  "hour": 9,
+  "minute": 0,
+  "days": ["sat","sun","mon","tue","wed","thu","fri"]
+}
+</action>
+```
+
+### cancel_task
+```xml
+<action type="cancel_task" task_id="task_1234_abc1">
+</action>
+```
+
+---
+
+## كيف تعمل الجدولة
+
+1. المستخدم يطلب: "كل يوم الساعة 7 أرسل لي آية قرآنية"
+2. الـ agent يستخدم `schedule_task` لحفظ المهمة في Firestore
+3. المهمة تظهر في الـ sidebar تحت "المهام المجدولة"
+4. كل ساعة: `scheduler.yml` يشغّل `scheduler.js`
+5. `scheduler.js` يقرأ المهام النشطة ويتحقق من `next_run`
+6. للمهام الحانة: ينشئ محادثة جديدة في Firestore ويطلق `agent-chat`
+7. الـ agent ينفذ المهمة ويكتب الرد في المحادثة
+8. المحادثة تظهر في تطبيق المستخدم تلقائياً
+
+---
+
+## ملاحظات تقنية
+
+- **لا timeout** على shell أو model calls — المهمة تكتمل مهما طالت
+- **GitHub Actions timeout**: 360 دقيقة (6 ساعات)
+- **ReAct loop**: حد أقصى 15 جولة لكل محادثة
+- **Sidebar**: على اليمين (RTL)، بلون الخلفية
+- **URL routing**: كل محادثة لها `?conv=conv_xxx` في المتصفح
